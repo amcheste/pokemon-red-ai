@@ -1,0 +1,6 @@
+[project]
+name = "pokemon-red-ai"
+version = "0.1.0"
+
+[project.scripts]
+pokemon-ai = "pokemon_red_ai.cli.commands:main"
