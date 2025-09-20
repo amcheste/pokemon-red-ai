@@ -28,10 +28,10 @@ Usage:
 """
 
 __version__ = "0.1.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
+__author__ = "Alan Chester"
+__email__ = "amcheste@gmail.com"
 __license__ = "MIT"
-__url__ = "https://github.com/yourusername/pokemon-red-ai"
+__url__ = "https://github.com/amcheste/pokemon-red-ai"
 
 # Core game interface
 from .game import PokemonRedAgent
