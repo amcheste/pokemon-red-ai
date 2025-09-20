@@ -1,3 +1,9 @@
 pokemon_training/
 PokemonRed.gb*
 .idea/
+pokemon_red_ai/__pycache__/
+pokemon_red_ai/cli/__pycache__/
+pokemon_red_ai/environment/__pycache__/
+pokemon_red_ai/game/__pycache__/
+pokemon_red_ai/training/__pycache__/
+pokemon_red_ai/utils/__pycache__/
