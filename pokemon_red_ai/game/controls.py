@@ -122,6 +122,7 @@ def get_screen_array(pyboy) -> np.ndarray:
         return np.array(screen_image)
     except Exception as e:
         logger.error(f"Failed to get screen array: {e}")
+        # Return properly shaped zero array instead of empty array
         return np.zeros((144, 160, 3), dtype=np.uint8)
 
 
@@ -171,24 +172,29 @@ def detect_screen_type(pyboy) -> ScreenType:
             # Ensure tilemap has expected dimensions before analysis
             if tilemap.shape[0] < 13 or tilemap.shape[1] < 15:
                 logger.debug(f"Tilemap too small for analysis: {tilemap.shape}")
-                return ScreenType.UNKNOWN
+                # Fall through to memory-based detection
+            else:
+                # Check for main menu pattern (NEW GAME/OPTION text area) first
+                if tilemap.shape[0] > 12 and tilemap.shape[1] > 14:
+                    menu_area = tilemap[8:13, 6:15]
+                    if np.any(menu_area > 0):
+                        return ScreenType.MAIN_MENU
 
-            # Check for main menu pattern (NEW GAME/OPTION text area)
-            if tilemap.shape[0] > 12 and tilemap.shape[1] > 14:
-                menu_area = tilemap[8:13, 6:15]
-                if np.any(menu_area > 0):
-                    return ScreenType.MAIN_MENU
+                # Check sprite density to detect different screen types
+                sprite_density = np.count_nonzero(tilemap)
 
-            # Check sprite density to detect intro animation
-            sprite_density = np.count_nonzero(tilemap)
-            if sprite_density > 50:
-                return ScreenType.INTRO_ANIMATION
-
-            # Check for title screen (Pokemon logo in top area)
-            if tilemap.shape[0] > 8:
-                top_area = tilemap[:8, :]
-                if np.any(top_area > 0):
-                    return ScreenType.TITLE_SCREEN
+                # Adjust thresholds based on expected content:
+                # Title screen: Pokemon logo in top area (moderate density)
+                # Intro animation: High sprite activity (high density)
+                if sprite_density > 100:  # High density = intro animation
+                    return ScreenType.INTRO_ANIMATION
+                elif sprite_density > 20:  # Moderate density = title screen
+                    # Check if there's content in the top area (Pokemon logo)
+                    top_area = tilemap[:8, :]
+                    if np.any(top_area > 0):
+                        return ScreenType.TITLE_SCREEN
+                    else:
+                        return ScreenType.INTRO_ANIMATION
 
         except (IndexError, ValueError) as e:
             logger.debug(f"Tilemap analysis failed: {e}")
