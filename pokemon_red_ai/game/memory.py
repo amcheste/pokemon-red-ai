@@ -114,7 +114,7 @@ def read_memory_value(memory, address: int, is_16bit: bool = False) -> int:
             return low | (high << 8)
         else:
             return memory[address]
-    except (IndexError, KeyError, TypeError) as e:
+    except Exception as e:
         logger.warning(f"Failed to read memory at 0x{address:04X}: {e}")
         return 0
 
