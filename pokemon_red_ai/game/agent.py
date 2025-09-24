@@ -42,7 +42,7 @@ class PokemonRedAgent:
     """
 
     def __init__(self, rom_path: str, show_window: bool = True,
-                 speed_multiplier: int = 1, save_state: bool = False):
+                 speed_multiplier: int = 1, enable_save_states: bool = False):
         """
         Initialize the Pokemon Red agent.
 
@@ -50,12 +50,12 @@ class PokemonRedAgent:
             rom_path: Path to Pokemon Red ROM file
             show_window: If True, shows PyBoy window; if False, runs headless
             speed_multiplier: Game speed multiplier (1 = normal, 0 = unlimited)
-            save_state: Whether to enable save states
+            enable_save_states: Whether to enable save states
         """
         self.rom_path = rom_path
         self.show_window = show_window
         self.speed_multiplier = speed_multiplier
-        self.save_state = save_state
+        self.enable_save_states = enable_save_states
 
         # Initialize PyBoy with compatibility checks
         try:
@@ -390,7 +390,7 @@ class PokemonRedAgent:
         Returns:
             True if successful
         """
-        if not self.save_state:
+        if not self.enable_save_states:
             logger.warning("Save states not enabled")
             return False
 
@@ -413,7 +413,7 @@ class PokemonRedAgent:
         Returns:
             True if successful
         """
-        if not self.save_state:
+        if not self.enable_save_states:
             logger.warning("Save states not enabled")
             return False
 

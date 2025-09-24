@@ -119,7 +119,11 @@ def get_screen_array(pyboy) -> np.ndarray:
     """
     try:
         screen_image = pyboy.screen.image
-        return np.array(screen_image)
+        screen_array = np.array(screen_image)
+        # Ensure we return a properly shaped array
+        if screen_array.size == 0 or len(screen_array.shape) == 0:
+            return np.zeros((144, 160, 3), dtype=np.uint8)
+        return screen_array
     except Exception as e:
         logger.error(f"Failed to get screen array: {e}")
         # Return properly shaped zero array instead of empty array
@@ -156,14 +160,25 @@ def detect_screen_type(pyboy) -> ScreenType:
     try:
         from .memory import read_memory_value, MEMORY_ADDRESSES
 
-        # Read key memory indicators
-        map_id = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['map_id'])
-        game_state = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['game_state'])
-        menu_state = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['menu_state'])
+        # Read key memory indicators - check if memory access fails directly
+        try:
+            # Direct memory access to catch errors before read_memory_value handles them
+            _ = pyboy.memory[MEMORY_ADDRESSES['map_id']]
+
+            map_id = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['map_id'])
+            game_state = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['game_state'])
+            menu_state = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['menu_state'])
+        except Exception as e:
+            logger.error(f"Memory reading failed in screen detection: {e}")
+            return ScreenType.UNKNOWN
 
         # If map_id != 0, we're in the actual game world
         if map_id != 0:
             return ScreenType.IN_GAME
+
+        # Check menu_state first for main menu
+        if menu_state in [1, 2, 3]:
+            return ScreenType.MAIN_MENU
 
         # Analyze screen content using tilemap
         try:
@@ -172,23 +187,20 @@ def detect_screen_type(pyboy) -> ScreenType:
             # Ensure tilemap has expected dimensions before analysis
             if tilemap.shape[0] < 13 or tilemap.shape[1] < 15:
                 logger.debug(f"Tilemap too small for analysis: {tilemap.shape}")
-                # Fall through to memory-based detection
             else:
-                # Check for main menu pattern (NEW GAME/OPTION text area) first
-                if tilemap.shape[0] > 12 and tilemap.shape[1] > 14:
-                    menu_area = tilemap[8:13, 6:15]
-                    if np.any(menu_area > 0):
-                        return ScreenType.MAIN_MENU
-
-                # Check sprite density to detect different screen types
+                # Calculate sprite density
                 sprite_density = np.count_nonzero(tilemap)
 
-                # Adjust thresholds based on expected content:
-                # Title screen: Pokemon logo in top area (moderate density)
-                # Intro animation: High sprite activity (high density)
+                # Check for main menu pattern first (NEW GAME/OPTION text area)
+                if tilemap.shape[0] > 12 and tilemap.shape[1] > 14:
+                    menu_area = tilemap[8:13, 6:15]
+                    if np.any(menu_area > 0) and sprite_density < 100:
+                        return ScreenType.MAIN_MENU
+
+                # Screen type based on sprite density:
                 if sprite_density > 100:  # High density = intro animation
                     return ScreenType.INTRO_ANIMATION
-                elif sprite_density > 20:  # Moderate density = title screen
+                elif sprite_density > 20:  # Moderate density
                     # Check if there's content in the top area (Pokemon logo)
                     top_area = tilemap[:8, :]
                     if np.any(top_area > 0):
@@ -198,13 +210,10 @@ def detect_screen_type(pyboy) -> ScreenType:
 
         except (IndexError, ValueError) as e:
             logger.debug(f"Tilemap analysis failed: {e}")
-            # Fall through to memory-based detection
 
         # Fallback to memory-based detection
         if game_state == 0 and menu_state == 0:
             return ScreenType.TITLE_SCREEN
-        elif menu_state in [1, 2, 3]:
-            return ScreenType.MAIN_MENU
 
         return ScreenType.UNKNOWN
 
@@ -384,25 +393,34 @@ def accept_default_name(pyboy, max_attempts: int = 10) -> bool:
     wait_frames(pyboy, 120)
 
     # Strategy 1: Press START to accept default name (most reliable)
-    for attempt in range(max_attempts):
-        press_button_basic(pyboy, 'START', hold_frames=20, release_frames=60)
-        wait_frames(pyboy, 60)
+    try:
+        for attempt in range(max_attempts):
+            press_button_basic(pyboy, 'START', hold_frames=20, release_frames=60)
+            wait_frames(pyboy, 60)
+    except Exception as e:
+        logger.warning(f"START button strategy failed: {e}")
 
     # Strategy 2: Navigate to END button manually
-    navigate_menu_cursor(pyboy, 5, 9)  # Typical END button position
+    try:
+        navigate_menu_cursor(pyboy, 5, 9)  # Typical END button position
 
-    # Try pressing A on END button
-    for attempt in range(3):
-        press_button_basic(pyboy, 'A', hold_frames=20, release_frames=60)
-        wait_frames(pyboy, 60)
+        # Try pressing A on END button
+        for attempt in range(3):
+            press_button_basic(pyboy, 'A', hold_frames=20, release_frames=60)
+            wait_frames(pyboy, 60)
+    except Exception as e:
+        logger.warning(f"Navigation strategy failed: {e}")
 
     # Strategy 3: Try alternative END button positions
-    alternative_positions = [(5, 9), (4, 9), (5, 8), (4, 8)]
+    try:
+        alternative_positions = [(5, 9), (4, 9), (5, 8), (4, 8)]
 
-    for row, col in alternative_positions:
-        navigate_menu_cursor(pyboy, row, col)
-        press_button_basic(pyboy, 'A', hold_frames=20, release_frames=60)
-        wait_frames(pyboy, 30)
+        for row, col in alternative_positions:
+            navigate_menu_cursor(pyboy, row, col)
+            press_button_basic(pyboy, 'A', hold_frames=20, release_frames=60)
+            wait_frames(pyboy, 30)
+    except Exception as e:
+        logger.warning(f"Alternative positions strategy failed: {e}")
 
     # Extra wait to ensure screen transition completes
     wait_frames(pyboy, 180)
