@@ -139,6 +139,9 @@ class TestScreenFunctions:
 
         assert isinstance(screen, np.ndarray)
         assert screen.shape == (144, 160, 3)
+        assert screen.dtype == np.uint8
+        # Should be all zeros due to error
+        assert np.all(screen == 0)
 
     def test_get_tilemap_background(self):
         """Test getting background tilemap."""
@@ -193,9 +196,9 @@ class TestScreenDetection:
         mock_memory.__getitem__ = Mock(side_effect=memory_side_effect)
         mock_pyboy.memory = mock_memory
 
-        # Mock tilemap with Pokemon logo in top area
+        # Mock tilemap with moderate density (21-100) and top area content
         mock_tilemap = np.zeros((18, 20), dtype=np.uint8)
-        mock_tilemap[:8, :] = 100
+        mock_tilemap[:8, 5:15] = 50  # Top area content (Pokemon logo) - 80 non-zero pixels
         type(mock_pyboy).tilemap_background = PropertyMock(return_value=mock_tilemap)
 
         screen_type = detect_screen_type(mock_pyboy)
@@ -234,13 +237,15 @@ class TestScreenDetection:
         def memory_side_effect(addr):
             if addr == MEMORY_ADDRESSES['map_id']:
                 return 0
+            elif addr == MEMORY_ADDRESSES['menu_state']:
+                return 0
             return 0
 
         mock_memory.__getitem__ = Mock(side_effect=memory_side_effect)
         mock_pyboy.memory = mock_memory
 
-        # Mock tilemap with high sprite density
-        mock_tilemap = np.random.randint(50, 200, (18, 20), dtype=np.uint8)
+        # Mock tilemap with very high sprite density (>100)
+        mock_tilemap = np.full((18, 20), 200, dtype=np.uint8)  # All 360 pixels filled
         type(mock_pyboy).tilemap_background = PropertyMock(return_value=mock_tilemap)
 
         screen_type = detect_screen_type(mock_pyboy)
@@ -255,6 +260,7 @@ class TestScreenDetection:
 
         screen_type = detect_screen_type(mock_pyboy)
 
+        # Should return UNKNOWN when memory reading fails
         assert screen_type == ScreenType.UNKNOWN
 
 
@@ -430,11 +436,13 @@ class TestNamingScreen:
         """Test accepting name handles errors."""
         mock_pyboy = Mock()
         mock_pyboy.button_press = Mock(side_effect=Exception("Error"))
+        mock_pyboy.button_release = Mock(side_effect=Exception("Error"))
         mock_pyboy.send_input = Mock()
 
+        # Function should handle errors and still return True
         result = accept_default_name(mock_pyboy, max_attempts=2)
 
-        # Should still complete
+        # Should still complete despite errors
         assert result is True
 
 

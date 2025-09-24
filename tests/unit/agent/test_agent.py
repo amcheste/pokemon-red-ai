@@ -428,7 +428,7 @@ class TestAgentSaveStates:
             mock_pyboy.save_state = Mock()
             MockPyBoy.return_value = mock_pyboy
 
-            agent = PokemonRedAgent(str(mock_rom_file), save_state=True)
+            agent = PokemonRedAgent(str(mock_rom_file), enable_save_states=True)
 
             with patch('builtins.open', create=True):
                 result = agent.save_state(slot=0)
@@ -444,7 +444,7 @@ class TestAgentSaveStates:
             mock_pyboy.screen = Mock()
             MockPyBoy.return_value = mock_pyboy
 
-            agent = PokemonRedAgent(str(mock_rom_file), save_state=False)
+            agent = PokemonRedAgent(str(mock_rom_file), enable_save_states=False)
             result = agent.save_state(slot=0)
 
             assert result is False
@@ -458,7 +458,7 @@ class TestAgentSaveStates:
             mock_pyboy.load_state = Mock()
             MockPyBoy.return_value = mock_pyboy
 
-            agent = PokemonRedAgent(str(mock_rom_file), save_state=True)
+            agent = PokemonRedAgent(str(mock_rom_file), enable_save_states=True)
 
             with patch('builtins.open', create=True):
                 with patch('os.path.exists', return_value=True):
@@ -662,13 +662,19 @@ class TestAgentErrorHandling:
             mock_pyboy = Mock()
             mock_pyboy.memory = Mock()
             mock_pyboy.screen = Mock()
-            mock_pyboy.button_press = Mock(side_effect=Exception("Button error"))
+            # Make both button methods fail to force fallback
+            mock_pyboy.button_press = Mock(side_effect=AttributeError("Button press not available"))
+            mock_pyboy.button_release = Mock()
+            mock_pyboy.send_input = Mock()  # This should work as fallback
             MockPyBoy.return_value = mock_pyboy
 
             agent = PokemonRedAgent(str(mock_rom_file))
 
-            # Should handle error (may fall back to other methods)
+            # Should handle error gracefully by falling back to send_input
             agent.press_button('A')
+
+            # Verify fallback was used
+            assert mock_pyboy.send_input.call_count == 2  # Press and release
 
 
 # Performance tests
