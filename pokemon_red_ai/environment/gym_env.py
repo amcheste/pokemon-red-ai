@@ -465,3 +465,51 @@ class PokemonRedVecEnv:
         """Set attribute on all environments."""
         for env, value in zip(self.envs, values):
             setattr(env, attr_name, value)
+
+    def _get_info(self) -> Dict[str, Any]:
+        """Get additional episode information."""
+        game_state = self.game.get_comprehensive_state()
+        reward_breakdown = self.reward_calculator.get_reward_breakdown()
+        exploration_progress = self.game.get_exploration_progress()
+
+        # Count unique maps from visited locations
+        unique_maps = set()
+        for x, y, map_id in self.visited_locations:
+            if map_id != 0:
+                unique_maps.add(map_id)
+
+        info = {
+            # Episode metrics
+            'episode_steps': self.episode_steps,
+            'episode_reward': self.episode_reward,
+
+            # Game state
+            'current_map': game_state['position']['map'],
+            'map_name': game_state['map_name'],
+            'player_level': game_state['stats']['level'],
+            'badges_earned': game_state['badge_count'],
+            'pokemon_count': game_state['stats']['party_count'],
+            'hp_ratio': game_state['stats']['hp_ratio'],
+            'money': game_state['money'],
+            'in_game': game_state['in_game'],
+            'is_alive': game_state['is_alive'],
+
+            # Exploration metrics
+            'locations_visited': len(self.visited_locations),
+            'maps_visited': len(unique_maps),
+            'unique_maps_list': list(unique_maps),
+
+            # Reward breakdown
+            'reward_components': reward_breakdown,
+
+            # Performance metrics
+            'total_episodes': self.total_episodes,
+            'successful_resets': self.successful_resets,
+
+            # IMPORTANT: These keys match what the callback expects
+            # Monitor wrapper will add 'r' (reward) and 'l' (length) automatically
+            'maps_discovered': len(unique_maps),  # Alternative key name
+            'badges': game_state['badge_count'],  # Alternative key name
+        }
+
+        return info
