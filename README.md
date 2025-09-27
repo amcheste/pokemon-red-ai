@@ -1,21 +1,25 @@
 # 🎮 Pokemon Red AI
 
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![PyBoy](https://img.shields.io/badge/PyBoy-2.0+-green.svg)](https://github.com/Baekalfen/PyBoy)
 
 A comprehensive reinforcement learning toolkit for training AI agents to play Pokemon Red using PyBoy emulation and Stable-Baselines3.
 
+**🚀 Now with improved exploration-focused training for better results!**
+
 ## 🌟 Features
 
 - **🤖 Complete RL Environment**: Full Gymnasium-compatible environment for Pokemon Red
-- **🎯 Multiple Reward Strategies**: Standard, exploration-focused, progress-focused, and sparse reward systems
+- **🎯 Improved Exploration Training**: Enhanced reward system for better map discovery and exploration
 - **📊 Live Training Visualization**: Real-time plots and metrics during training
 - **🔧 Modular Architecture**: Clean, maintainable codebase with separated concerns
 - **💾 Automatic State Management**: Handles game initialization, resets, and save states
 - **🎨 Rich CLI**: Beautiful command-line interface powered by Click and Rich
 - **📈 TensorBoard Integration**: Detailed training logs and metrics
 - **🧪 Testing & Evaluation**: Comprehensive model testing and performance analysis
+- **⚡ Anti-Stuck Mechanisms**: Prevents agents from getting trapped in small areas
+- **🎮 Extended Episodes**: 3x longer episodes (15,000 steps) for better exploration
 
 ## 📋 Table of Contents
 
@@ -26,7 +30,8 @@ A comprehensive reinforcement learning toolkit for training AI agents to play Po
 - [Configuration](#configuration)
 - [Training Strategies](#training-strategies)
 - [Advanced Usage](#advanced-usage)
-- [Troubleshooting](#troubleshooting)
+- [Performance Tips](#performance-tips)
+- [What's Improved](#whats-improved)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -70,27 +75,23 @@ pokemon-ai find-roms .
 
 ## 🎯 Quick Start
 
-### Training Your First Agent
+### Training Your First Agent (Improved Settings)
 
 ```bash
-# Basic training (100k timesteps)
+# Basic training with improved exploration-focused defaults
+pokemon-ai train --rom PokemonRed.gb --monitor-mode
+
+# Training with custom timesteps but keeping improvements
+pokemon-ai train --rom PokemonRed.gb --timesteps 200000 --monitor-mode
+
+# Fast training without monitoring (headless)
 pokemon-ai train --rom PokemonRed.gb --timesteps 100000
-
-# Training with visualization
-pokemon-ai train --rom PokemonRed.gb --timesteps 100000 --monitor-mode
-
-# Training with custom settings
-pokemon-ai train \
-  --rom PokemonRed.gb \
-  --timesteps 500000 \
-  --reward-strategy exploration \
-  --show-plots
 ```
 
 ### Testing a Trained Model
 
 ```bash
-# Test trained model
+# Test with improved episode length
 pokemon-ai test --rom PokemonRed.gb --model models/best_model.zip --episodes 10
 ```
 
@@ -99,15 +100,15 @@ pokemon-ai test --rom PokemonRed.gb --model models/best_model.zip --episodes 10
 ```python
 from pokemon_red_ai import PokemonTrainer
 
-# Create trainer
+# Create trainer with improved defaults (exploration-focused)
 trainer = PokemonTrainer(
     rom_path="PokemonRed.gb",
     save_dir="./training_output/"
 )
 
-# Train agent
+# Train agent with improved settings
 trainer.train(
-    total_timesteps=100000,
+    total_timesteps=500000,  # 5x more training
     show_plots=True
 )
 
@@ -118,6 +119,8 @@ results = trainer.test(
 )
 
 print(f"Average reward: {results['avg_reward']:.2f}")
+print(f"Max maps discovered: {results['max_maps_visited']}")
+print(f"Exploration efficiency: {results['avg_exploration_efficiency']:.4f}")
 ```
 
 ## 📖 Usage
@@ -136,41 +139,46 @@ pokemon-ai init --save-dir ./my_pokemon_project
 #### Training Commands
 
 ```bash
-# Standard training
-pokemon-ai train --rom PokemonRed.gb --timesteps 100000
+# 🚀 IMPROVED: Training with new defaults (recommended)
+pokemon-ai train --rom PokemonRed.gb --monitor-mode
 
-# With custom configuration
-pokemon-ai train --rom PokemonRed.gb --config config.yaml
-
-# Advanced training options
+# Advanced training with all monitoring
 pokemon-ai train \
   --rom PokemonRed.gb \
   --timesteps 1000000 \
-  --algorithm PPO \
-  --reward-strategy progress \
-  --observation-type multi_modal \
-  --learning-rate 0.0003 \
-  --batch-size 128 \
-  --save-freq 50000 \
-  --show-game \
-  --show-plots
+  --reward-strategy exploration \
+  --max-episode-steps 20000 \
+  --learning-rate 0.0001 \
+  --batch-size 32 \
+  --monitor-mode
+
+# Quick training without monitoring (fastest)
+pokemon-ai train --rom PokemonRed.gb --timesteps 100000
 ```
+
+**Key Improvements in Default Settings:**
+- 📈 **500k timesteps** (5x increase from 100k)
+- 🎯 **Exploration rewards** (5x higher than standard)
+- ⏱️ **15k step episodes** (3x longer for better exploration)
+- 🧠 **Optimized learning** (lower learning rate, smaller batches)
+- 🔧 **Anti-stuck mechanisms** (prevents getting trapped)
 
 #### Testing and Evaluation
 
 ```bash
-# Test model with visualization
+# Test model with improved episode length
 pokemon-ai test \
   --rom PokemonRed.gb \
   --model models/best_model.zip \
   --episodes 10 \
   --render
 
-# Save test results
+# Save detailed test results
 pokemon-ai test \
   --rom PokemonRed.gb \
   --model models/best_model.zip \
-  --save-results results.json
+  --save-results results.json \
+  --max-episode-steps 20000
 ```
 
 #### Project Management
@@ -196,9 +204,9 @@ pokemon-ai doctor
 ```python
 from pokemon_red_ai import create_trainer
 
-# Quick training with defaults
+# Quick training with improved defaults
 trainer = create_trainer("PokemonRed.gb")
-trainer.train(timesteps=100000)
+trainer.train(timesteps=500000)  # Uses exploration-focused rewards
 ```
 
 #### Custom Environment
@@ -206,26 +214,30 @@ trainer.train(timesteps=100000)
 ```python
 from pokemon_red_ai import PokemonRedGymEnv, RewardConfig
 
-# Create custom reward configuration
+# Create enhanced reward configuration
 reward_config = RewardConfig(
-    exploration_reward=2.0,
-    new_map_reward=50.0,
-    level_reward_multiplier=100.0
+    exploration_reward=5.0,        # 5x higher exploration rewards
+    new_map_reward=100.0,         # Major bonuses for new areas
+    time_penalty=-0.001,          # Reduced time pressure
+    level_reward_multiplier=25.0   # Balanced progress rewards
 )
 
-# Create environment
+# Create environment with improved settings
 env = PokemonRedGymEnv(
     rom_path="PokemonRed.gb",
-    reward_strategy="exploration",
+    reward_strategy="exploration",  # Exploration-focused by default
     reward_config=reward_config,
-    max_episode_steps=10000
+    max_episode_steps=15000        # 3x longer episodes
 )
 
 # Use with any RL library
 from stable_baselines3 import PPO
 
-model = PPO("MultiInputPolicy", env, verbose=1)
-model.learn(total_timesteps=100000)
+model = PPO("MultiInputPolicy", env, verbose=1,
+           learning_rate=1e-4,     # More stable learning
+           batch_size=32,          # Better gradients
+           ent_coef=0.02)          # Higher exploration
+model.learn(total_timesteps=500000)
 ```
 
 #### Advanced Training Setup
@@ -236,28 +248,31 @@ from pokemon_red_ai import PokemonTrainer, load_config
 # Load configuration from file
 config = load_config("config.yaml")
 
-# Create trainer with custom settings
+# Create trainer with improved exploration focus
 trainer = PokemonTrainer(
     rom_path="PokemonRed.gb",
     save_dir="./advanced_training/",
-    reward_strategy="progress",
+    reward_strategy="exploration",    # Default improved strategy
     observation_type="multi_modal"
 )
 
-# Train with custom hyperparameters
+# Train with optimized hyperparameters
 trainer.train(
-    total_timesteps=1000000,
+    total_timesteps=1000000,         # Extended training
     algorithm="PPO",
-    learning_rate=0.0003,
-    batch_size=128,
-    n_epochs=15,
+    learning_rate=1e-4,              # More stable
+    batch_size=32,                   # Better gradients
+    n_epochs=5,                      # Prevent overfitting
+    gamma=0.995,                     # Long-term thinking
+    ent_coef=0.02,                   # Higher exploration
+    max_episode_steps=15000,         # 3x longer episodes
     show_plots=True,
-    save_freq=50000
+    save_freq=25000                  # More frequent saves
 )
 
-# Get training statistics
+# Get detailed training statistics
 stats = trainer.get_training_summary()
-print(stats)
+print(f"Best exploration: {stats['training_stats']['best_exploration']}")
 ```
 
 ## 🏗️ Architecture
@@ -297,33 +312,37 @@ pokemon_red_ai/
 
 ### YAML Configuration
 
-Create a `config.yaml` file for reproducible training:
+Create a `config.yaml` file for reproducible training with improved defaults:
 
 ```yaml
-# Training Configuration
+# Training Configuration (IMPROVED DEFAULTS)
 training:
-  total_timesteps: 100000
+  total_timesteps: 500000          # 5x increase
   algorithm: "PPO"
-  max_episode_steps: 5000
-  reward_strategy: "standard"
+  max_episode_steps: 15000         # 3x longer episodes
+  reward_strategy: "exploration"   # Exploration-focused
   observation_type: "multi_modal"
-  learning_rate: 0.0003
-  batch_size: 64
+  learning_rate: 0.0001           # More stable
+  batch_size: 32                  # Better gradients
+  n_epochs: 5                     # Prevent overfitting
+  gamma: 0.995                    # Long-term thinking
+  ent_coef: 0.02                  # Higher exploration
   show_plots: true
 
-# Reward Configuration
+# Improved Reward Configuration
 rewards:
-  exploration_reward: 1.0
-  new_map_reward: 20.0
-  level_reward_multiplier: 50.0
-  badge_reward_multiplier: 200.0
-  death_penalty: -100.0
+  exploration_reward: 5.0         # 5x higher
+  new_map_reward: 100.0          # 5x higher
+  time_penalty: -0.001           # 10x lower pressure
+  level_reward_multiplier: 25.0   # Balanced
+  badge_reward_multiplier: 150.0  # Balanced
+  death_penalty: -50.0           # Less harsh
 
 # Environment Configuration
 environment:
   rom_path: "PokemonRed.gb"
   headless: true
-  max_episode_steps: 5000
+  max_episode_steps: 15000        # Extended episodes
   screen_size: [80, 72]
 ```
 
@@ -334,33 +353,38 @@ Configure via environment variables:
 ```bash
 # Example environment variable overrides
 export POKEMON_AI_TRAINING__LEARNING_RATE=0.0001
-export POKEMON_AI_REWARDS__EXPLORATION_REWARD=2.0
-export POKEMON_AI_ENVIRONMENT__MAX_EPISODE_STEPS=10000
+export POKEMON_AI_REWARDS__EXPLORATION_REWARD=5.0
+export POKEMON_AI_ENVIRONMENT__MAX_EPISODE_STEPS=15000
 ```
 
 ## 🎯 Training Strategies
 
-### Reward Strategies
+### Exploration-Focused (Default & Recommended)
+Optimized for discovering new areas and preventing getting stuck:
+```python
+trainer = PokemonTrainer(rom_path="PokemonRed.gb", reward_strategy="exploration")
+```
 
-#### Standard (Default)
+**Features:**
+- 5x higher exploration rewards
+- Massive bonuses for new map discovery
+- Anti-stuck mechanisms
+- Distance-based bonuses
+- Progressive milestone rewards
+
+### Standard (Balanced)
 Balanced approach for general gameplay:
 ```python
 trainer = PokemonTrainer(rom_path="PokemonRed.gb", reward_strategy="standard")
 ```
 
-#### Exploration-Focused
-Emphasizes map coverage and discovery:
-```python
-trainer = PokemonTrainer(rom_path="PokemonRed.gb", reward_strategy="exploration")
-```
-
-#### Progress-Focused
+### Progress-Focused
 Optimized for story progression and badges:
 ```python
 trainer = PokemonTrainer(rom_path="PokemonRed.gb", reward_strategy="progress")
 ```
 
-#### Sparse
+### Sparse
 Only rewards major achievements:
 ```python
 trainer = PokemonTrainer(rom_path="PokemonRed.gb", reward_strategy="sparse")
@@ -480,16 +504,16 @@ pip show pyboy
 #### Memory Issues
 ```bash
 # Reduce batch size or episode length
-pokemon-ai train --rom PokemonRed.gb --batch-size 32 --max-episode-steps 2000
+pokemon-ai train --rom PokemonRed.gb --batch-size 16 --max-episode-steps 10000
 ```
 
 #### Training Not Progressing
 ```bash
-# Try different reward strategy
+# Use improved exploration strategy (now default)
 pokemon-ai train --rom PokemonRed.gb --reward-strategy exploration
 
-# Adjust learning rate
-pokemon-ai train --rom PokemonRed.gb --learning-rate 0.0001
+# Adjust learning rate if needed
+pokemon-ai train --rom PokemonRed.gb --learning-rate 0.00005
 ```
 
 ### Debug Mode
@@ -501,21 +525,56 @@ pokemon-ai train --rom PokemonRed.gb -vv
 
 ## 📊 Performance Tips
 
+### Better Exploration Results
+
+1. **Use exploration strategy** (now default): `--reward-strategy exploration`
+2. **Longer episodes**: `--max-episode-steps 15000` (now default)
+3. **Extended training**: `--timesteps 500000` (now default)
+4. **Monitor progress**: `--monitor-mode` to watch training
+5. **Stable learning**: Lower learning rates and smaller batches (now default)
+
 ### Faster Training
 
-1. **Use headless mode** (default): `--headless`
-2. **Reduce observation resolution**: Smaller screen size
-3. **Use minimal observations**: `--observation-type minimal`
-4. **Increase batch size**: `--batch-size 128` (if you have enough RAM)
-5. **Use GPU**: Ensure PyTorch CUDA is available
+1. **Use headless mode**: No `--monitor-mode` (trains ~2x faster)
+2. **Reduce episode length**: `--max-episode-steps 10000` (if needed)
+3. **Use GPU**: Ensure PyTorch CUDA is available
+4. **Smaller batch size**: `--batch-size 16` (if memory limited)
 
 ### Better Results
 
-1. **Longer training**: `--timesteps 1000000`
-2. **Appropriate reward strategy**: Choose based on your goal
-3. **Tune hyperparameters**: Use `optimize_hyperparameters()`
-4. **Multi-environment training**: Use vectorized environments
-5. **Save frequency**: `--save-freq 10000` to keep best models
+1. **Default settings**: Just use `pokemon-ai train --rom PokemonRed.gb --monitor-mode`
+2. **Patient training**: Run for 500k+ timesteps
+3. **Multiple runs**: Train several models and pick the best
+4. **Save frequently**: `--save-freq 25000` (now default)
+
+## 🔬 What's Improved
+
+### Key Changes from Previous Versions
+
+**🎯 Exploration Focus:**
+- Exploration rewards increased 5x (1.0 → 5.0)
+- New map rewards increased 5x (20.0 → 100.0) 
+- Time penalty reduced 10x (-0.01 → -0.001)
+
+**⏱️ Episode Length:**
+- Extended from 5,000 to 15,000 steps (3x longer)
+- Allows much more exploration time
+
+**🧠 Learning Stability:**
+- Learning rate: 3e-4 → 1e-4 (more stable)
+- Batch size: 64 → 32 (better gradients)
+- Entropy coefficient: 0.01 → 0.02 (more exploration)
+
+**🔧 Anti-Stuck Features:**
+- Detects when agent is stuck in same area
+- Penalties for frequent location revisits
+- Progressive bonuses for consecutive exploration
+- Distance bonuses for exploring far from start
+
+**💾 Better Defaults:**
+- Training: 100k → 500k timesteps
+- Saves: Every 25k steps (more frequent)
+- Strategy: Exploration-focused by default
 
 ## 🤝 Contributing
 
@@ -571,7 +630,20 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🗺️ Roadmap
 
-Coming Soon...
+### Completed ✅
+- Exploration-focused training improvements
+- Extended episode lengths for better exploration
+- Anti-stuck mechanisms and adaptive rewards
+- Optimized learning parameters
+- Enhanced CLI with better defaults
+
+### Coming Soon 🚀
+- Curriculum learning for progressive difficulty
+- Intrinsic motivation and curiosity-driven exploration
+- Multi-agent training environments
+- Advanced save state management
+- Automated hyperparameter optimization
+- Support for other Pokemon games
 
 ## ⭐ Star History
 

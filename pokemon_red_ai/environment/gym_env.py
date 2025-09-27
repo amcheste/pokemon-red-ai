@@ -38,8 +38,8 @@ class PokemonRedGymEnv(gym.Env):
     def __init__(self,
                  rom_path: str,
                  headless: bool = True,
-                 max_episode_steps: int = 5000,
-                 reward_strategy: str = "standard",
+                 max_episode_steps: int = 15000,  # UPDATED: Increased from 5000
+                 reward_strategy: str = "exploration",  # UPDATED: Changed default from "standard"
                  reward_config: Optional[RewardConfig] = None,
                  screen_size: Tuple[int, int] = (80, 72),
                  observation_type: str = "multi_modal"):
@@ -49,8 +49,8 @@ class PokemonRedGymEnv(gym.Env):
         Args:
             rom_path: Path to Pokemon Red ROM file
             headless: If True, runs without display window
-            max_episode_steps: Maximum steps per episode
-            reward_strategy: Reward calculation strategy
+            max_episode_steps: Maximum steps per episode (UPDATED: increased default)
+            reward_strategy: Reward calculation strategy (UPDATED: default to exploration)
             reward_config: Custom reward configuration
             screen_size: Target screen size (width, height)
             observation_type: Type of observation ('multi_modal', 'minimal', 'screen_only')
@@ -69,6 +69,23 @@ class PokemonRedGymEnv(gym.Env):
             show_window=not headless,
             speed_multiplier=0  # Unlimited speed for training
         )
+
+        # UPDATED: Use improved reward configuration if none provided
+        if reward_config is None and reward_strategy == "exploration":
+            reward_config = RewardConfig(
+                time_penalty=-0.001,
+                exploration_reward=5.0,
+                new_map_reward=100.0,
+                level_reward_multiplier=25.0,
+                badge_reward_multiplier=150.0,
+                pokemon_reward_multiplier=75.0,
+                low_health_threshold=0.3,
+                health_penalty_multiplier=5.0,
+                death_penalty=-50.0,
+                money_reward_multiplier=0.005,
+                battle_victory_reward=15.0,
+                item_acquisition_reward=8.0
+            )
 
         # Initialize reward calculator
         self.reward_calculator = create_reward_calculator(
@@ -100,6 +117,13 @@ class PokemonRedGymEnv(gym.Env):
         self.episode_reward = 0
         self.visited_locations: Set[Tuple[int, int, int]] = set()
         self.episode_info = {}
+
+        # ADDED: Enhanced tracking for better monitoring
+        self.episode_count = 0
+        self.total_exploration_rewards = 0
+        self.total_progress_rewards = 0
+        self.maps_discovered_this_episode = 0
+        self.last_significant_progress = 0
 
         # Performance tracking
         self.total_episodes = 0
@@ -140,6 +164,16 @@ class PokemonRedGymEnv(gym.Env):
         # Calculate reward using the configured strategy
         reward = self.reward_calculator.calculate_reward(game_state)
 
+        # ADDED: Track reward components for monitoring
+        components = self.reward_calculator.get_reward_breakdown()
+        if 'exploration' in components:
+            self.total_exploration_rewards += components['exploration']
+        if any(key in components for key in ['level', 'badge', 'pokemon']):
+            progress_reward = sum(components.get(key, 0) for key in ['level', 'badge', 'pokemon'])
+            self.total_progress_rewards += progress_reward
+            if progress_reward > 0:
+                self.last_significant_progress = self.episode_steps
+
         return reward
 
     def _check_done(self) -> Tuple[bool, bool]:
@@ -154,19 +188,16 @@ class PokemonRedGymEnv(gym.Env):
             logger.debug(f"Episode truncated: Max steps reached ({self.max_episode_steps})")
             return False, True
 
-        # Check for natural termination conditions (very lenient)
-        # In practice, we almost never terminate early to allow exploration
-
-        # Only terminate if completely stuck or in an unrecoverable state
+        # UPDATED: More lenient termination conditions
         game_state = self.game.get_comprehensive_state()
 
-        # Terminate if Pokemon has been unconscious for too long
+        # Only terminate if Pokemon has been unconscious for too long
         if (game_state['stats']['current_hp'] == 0 and
                 game_state['stats']['max_hp'] > 0):
-            # Allow some time for recovery, but not infinite
             if hasattr(self, '_unconscious_steps'):
                 self._unconscious_steps += 1
-                if self._unconscious_steps > 500:  # About 8 seconds of being unconscious
+                # UPDATED: Longer grace period (1000 steps instead of 500)
+                if self._unconscious_steps > 1000:
                     logger.debug("Episode terminated: Pokemon unconscious too long")
                     return True, False
             else:
@@ -174,7 +205,13 @@ class PokemonRedGymEnv(gym.Env):
         else:
             self._unconscious_steps = 0
 
-        # Never terminate for any other reason during training
+        # ADDED: Early termination if completely stuck (no exploration for very long time)
+        if (self.episode_steps > 1000 and
+            self.episode_steps - self.last_significant_progress > 2000 and
+            len(self.visited_locations) < 10):
+            logger.debug("Episode terminated: Agent appears completely stuck")
+            return True, False
+
         return False, False
 
     def _get_info(self) -> Dict[str, Any]:
@@ -189,10 +226,12 @@ class PokemonRedGymEnv(gym.Env):
             if map_id != 0:
                 unique_maps.add(map_id)
 
+        # UPDATED: Enhanced info with additional metrics
         info = {
             # Episode metrics
             'episode_steps': self.episode_steps,
             'episode_reward': self.episode_reward,
+            'episode_count': self.episode_count,
 
             # Game state
             'current_map': game_state['position']['map'],
@@ -209,6 +248,13 @@ class PokemonRedGymEnv(gym.Env):
             'locations_visited': len(self.visited_locations),
             'maps_visited': len(unique_maps),
             'unique_maps_list': list(unique_maps),
+
+            # ADDED: Enhanced tracking metrics
+            'exploration_efficiency': len(self.visited_locations) / max(self.episode_steps, 1),
+            'maps_discovered_this_episode': len(unique_maps),
+            'total_exploration_rewards': self.total_exploration_rewards,
+            'total_progress_rewards': self.total_progress_rewards,
+            'steps_since_progress': self.episode_steps - self.last_significant_progress,
 
             # Reward breakdown
             'reward_components': reward_breakdown,
@@ -251,11 +297,13 @@ class PokemonRedGymEnv(gym.Env):
         # Get episode info
         info = self._get_info()
 
-        # Periodic logging
-        if self.episode_steps % 100 == 0:
+        # UPDATED: Enhanced periodic logging with exploration focus
+        if self.episode_steps % 200 == 0:  # More frequent logging
+            unique_maps = len(set(loc[2] for loc in self.visited_locations if loc[2] != 0))
             logger.debug(f"Step {self.episode_steps}: Map {position['map']}, "
                          f"Pos({position['x']}, {position['y']}), "
-                         f"Reward: {reward:.2f}, Total: {self.episode_reward:.1f}")
+                         f"Reward: {reward:.2f}, Total: {self.episode_reward:.1f}, "
+                         f"Maps: {unique_maps}, Locations: {len(self.visited_locations)}")
 
         # Validate observation
         if not validate_observation(observation, self.observation_space):
@@ -274,12 +322,19 @@ class PokemonRedGymEnv(gym.Env):
         # Handle seed for reproducibility
         super().reset(seed=seed)
 
-        # Reset episode tracking
+        # UPDATED: Enhanced episode tracking reset
         self.episode_steps = 0
         self.episode_reward = 0
         self.visited_locations.clear()
         self._unconscious_steps = 0
         self.total_episodes += 1
+        self.episode_count += 1
+
+        # ADDED: Reset enhanced tracking
+        self.total_exploration_rewards = 0
+        self.total_progress_rewards = 0
+        self.maps_discovered_this_episode = 0
+        self.last_significant_progress = 0
 
         # Reset reward calculator
         self.reward_calculator.reset()
@@ -329,16 +384,18 @@ class PokemonRedGymEnv(gym.Env):
         if mode == 'rgb_array':
             return self.game.get_screen_array()
         elif mode == 'human':
-            # Display current state info
+            # UPDATED: Enhanced display with exploration info
             game_state = self.game.get_comprehensive_state()
             position = game_state['position']
             stats = game_state['stats']
+            unique_maps = len(set(loc[2] for loc in self.visited_locations if loc[2] != 0))
 
             print(f"Step {self.episode_steps}: "
                   f"Map {position['map']} ({game_state['map_name']}) "
                   f"Pos({position['x']}, {position['y']}) "
                   f"Level:{stats['level']} HP:{stats['current_hp']}/{stats['max_hp']} "
                   f"Badges:{game_state['badge_count']} "
+                  f"Maps:{unique_maps} Locations:{len(self.visited_locations)} "
                   f"Reward:{self.episode_reward:.1f}")
         else:
             super().render()
@@ -465,51 +522,3 @@ class PokemonRedVecEnv:
         """Set attribute on all environments."""
         for env, value in zip(self.envs, values):
             setattr(env, attr_name, value)
-
-    def _get_info(self) -> Dict[str, Any]:
-        """Get additional episode information."""
-        game_state = self.game.get_comprehensive_state()
-        reward_breakdown = self.reward_calculator.get_reward_breakdown()
-        exploration_progress = self.game.get_exploration_progress()
-
-        # Count unique maps from visited locations
-        unique_maps = set()
-        for x, y, map_id in self.visited_locations:
-            if map_id != 0:
-                unique_maps.add(map_id)
-
-        info = {
-            # Episode metrics
-            'episode_steps': self.episode_steps,
-            'episode_reward': self.episode_reward,
-
-            # Game state
-            'current_map': game_state['position']['map'],
-            'map_name': game_state['map_name'],
-            'player_level': game_state['stats']['level'],
-            'badges_earned': game_state['badge_count'],
-            'pokemon_count': game_state['stats']['party_count'],
-            'hp_ratio': game_state['stats']['hp_ratio'],
-            'money': game_state['money'],
-            'in_game': game_state['in_game'],
-            'is_alive': game_state['is_alive'],
-
-            # Exploration metrics
-            'locations_visited': len(self.visited_locations),
-            'maps_visited': len(unique_maps),
-            'unique_maps_list': list(unique_maps),
-
-            # Reward breakdown
-            'reward_components': reward_breakdown,
-
-            # Performance metrics
-            'total_episodes': self.total_episodes,
-            'successful_resets': self.successful_resets,
-
-            # IMPORTANT: These keys match what the callback expects
-            # Monitor wrapper will add 'r' (reward) and 'l' (length) automatically
-            'maps_discovered': len(unique_maps),  # Alternative key name
-            'badges': game_state['badge_count'],  # Alternative key name
-        }
-
-        return info
