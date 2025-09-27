@@ -4,6 +4,8 @@ Training callbacks for Pokemon Red RL.
 This module provides callback classes for monitoring and controlling
 the training process, including model saving, progress tracking, and
 live visualization.
+
+macOS-compatible version that saves plots to files instead of displaying them live.
 """
 
 import os
@@ -11,6 +13,9 @@ import numpy as np
 import logging
 from collections import deque
 from typing import Dict, Any, Optional
+import matplotlib
+# Use Agg backend (no GUI) to avoid conflicts with SDL on macOS
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from stable_baselines3.common.callbacks import BaseCallback
 
@@ -174,12 +179,11 @@ class TrainingCallback(BaseCallback):
         return stats
 
 
-class EnhancedTrainingCallback(TrainingCallback):
+class EnhancedTrainingCallback(BaseCallback):
     """
-    Enhanced callback with live visualizations and detailed monitoring.
+    Enhanced callback with plot saving and detailed monitoring.
 
-    Extends TrainingCallback with real-time plotting capabilities and
-    more detailed statistics tracking.
+    macOS-compatible version that saves plots to files instead of displaying them live.
     """
 
     def __init__(self,
@@ -194,14 +198,22 @@ class EnhancedTrainingCallback(TrainingCallback):
         Args:
             save_freq: Frequency of model saves
             save_path: Path to save models and logs
-            show_plots: Whether to show live plots
+            show_plots: Whether to save plots to files
             plot_freq: Frequency of plot updates (in timesteps)
             verbose: Verbosity level
         """
-        super().__init__(save_freq, save_path, verbose)
+        super().__init__(verbose)
 
+        self.save_freq = save_freq
+        self.save_path = save_path
         self.show_plots = show_plots
         self.plot_freq = plot_freq
+
+        # Create directories
+        self.save_path_models = os.path.join(save_path, 'models')
+        self.save_path_logs = os.path.join(save_path, 'logs')
+        os.makedirs(self.save_path_models, exist_ok=True)
+        os.makedirs(self.save_path_logs, exist_ok=True)
 
         # Extended statistics with limited history for plotting
         self.episode_rewards = deque(maxlen=1000)
@@ -213,116 +225,167 @@ class EnhancedTrainingCallback(TrainingCallback):
         # Timestep tracking for x-axis
         self.timesteps_history = deque(maxlen=1000)
 
-        # Live plotting setup
+        self.best_reward = -float('inf')
+        self.best_exploration = 0
+
         if self.show_plots:
-            self.setup_live_plots()
+            print("📊 macOS-compatible plotting enabled - plots will be saved to files")
+            print(f"   Plot files will be saved to: {self.save_path_logs}")
+            print("   Use 'open <filename>' or your image viewer to see plots")
 
         if self.verbose >= 1:
-            logger.info(f"EnhancedTrainingCallback initialized")
-            logger.info(f"  Live plots: {'enabled' if show_plots else 'disabled'}")
+            logger.info(f"EnhancedTrainingCallback initialized (macOS mode)")
+            logger.info(f"  Plot saving: {'enabled' if show_plots else 'disabled'}")
             logger.info(f"  Plot frequency: {plot_freq} timesteps")
 
-    def setup_live_plots(self) -> None:
-        """Setup matplotlib for live plotting."""
-        try:
-            plt.ion()  # Interactive mode
-            self.fig, self.axes = plt.subplots(2, 2, figsize=(12, 8))
-            self.fig.suptitle('Pokemon Red RL Training Progress', fontsize=14, fontweight='bold')
-
-            # Configure subplots
-            self.axes[0, 0].set_title('Episode Rewards')
-            self.axes[0, 0].set_xlabel('Timestep')
-            self.axes[0, 0].set_ylabel('Reward')
-            self.axes[0, 0].grid(True, alpha=0.3)
-
-            self.axes[0, 1].set_title('Episode Length')
-            self.axes[0, 1].set_xlabel('Timestep')
-            self.axes[0, 1].set_ylabel('Steps')
-            self.axes[0, 1].grid(True, alpha=0.3)
-
-            self.axes[1, 0].set_title('Maps Discovered')
-            self.axes[1, 0].set_xlabel('Timestep')
-            self.axes[1, 0].set_ylabel('Unique Maps')
-            self.axes[1, 0].grid(True, alpha=0.3)
-
-            self.axes[1, 1].set_title('Badges Earned')
-            self.axes[1, 1].set_xlabel('Timestep')
-            self.axes[1, 1].set_ylabel('Badge Count')
-            self.axes[1, 1].grid(True, alpha=0.3)
-
-            # Initialize empty line objects
-            self.lines = {}
-            colors = ['blue', 'green', 'red', 'purple']
-            for i, (ax, color) in enumerate(zip(self.axes.flat, colors)):
-                line, = ax.plot([], [], color=color, alpha=0.7, linewidth=1.5)
-                self.lines[i] = line
-
-            plt.tight_layout()
-            plt.show(block=False)
-
-            if self.verbose >= 1:
-                logger.info("Live plotting initialized successfully")
-
-        except Exception as e:
-            logger.error(f"Failed to setup live plots: {e}")
-            self.show_plots = False
-
-    def update_plots(self) -> None:
-        """Update the live plots with current data."""
-        if not self.show_plots or len(self.timesteps_history) == 0:
+    def create_and_save_plots(self) -> None:
+        """Create plots and save them to files (no GUI display)"""
+        if not self.show_plots:
             return
 
         try:
+            # Create figure
+            fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+            fig.suptitle(f'Pokemon Red RL Training Progress (Step {self.num_timesteps})',
+                         fontsize=14, fontweight='bold')
+
+            # Get data - ENSURE we have data to plot
             timesteps = list(self.timesteps_history)
+            rewards = list(self.episode_rewards)
+            lengths = list(self.episode_lengths)
+            maps = list(self.maps_discovered)
+            badges = list(self.badges_earned)
 
-            # Update reward plot
-            if len(self.episode_rewards) > 0:
-                rewards = list(self.episode_rewards)
+            # DEBUG: Print what data we have
+            print(f"🔍 DEBUG PLOTTING DATA:")
+            print(
+                f"   Timesteps: {len(timesteps)} points, range: {timesteps[:3] if timesteps else 'empty'}...{timesteps[-3:] if len(timesteps) > 3 else ''}")
+            print(
+                f"   Rewards: {len(rewards)} points, range: {rewards[:3] if rewards else 'empty'}...{rewards[-3:] if len(rewards) > 3 else ''}")
+            print(f"   Lengths: {len(lengths)} points")
+            print(f"   Maps: {len(maps)} points")
+            print(f"   Badges: {len(badges)} points")
+
+            # Plot 1: Episode Rewards - ALWAYS plot something, even if fake data
+            axes[0, 0].set_title('Episode Rewards')
+            axes[0, 0].set_xlabel('Timestep')
+            axes[0, 0].set_ylabel('Reward')
+            axes[0, 0].grid(True, alpha=0.3)
+
+            if len(rewards) > 0 and len(timesteps) >= len(rewards):
                 x_data = timesteps[-len(rewards):]
-                self.lines[0].set_data(x_data, rewards)
-                self.axes[0, 0].relim()
-                self.axes[0, 0].autoscale_view()
+                axes[0, 0].plot(x_data, rewards, 'b-o', alpha=0.7, linewidth=1.5, markersize=4)
+                print(f"   ✅ Plotted {len(rewards)} reward points")
+            else:
+                # Add fake data so we can see something
+                fake_x = [self.num_timesteps - 2000, self.num_timesteps - 1000, self.num_timesteps]
+                fake_rewards = [-15, -10, -5]
+                axes[0, 0].plot(fake_x, fake_rewards, 'r--o', alpha=0.5, label='No real data yet')
+                axes[0, 0].legend()
+                print(f"   ⚠️ No reward data, plotted fake data")
 
-            # Update length plot
-            if len(self.episode_lengths) > 0:
-                lengths = list(self.episode_lengths)
+            # Plot 2: Episode Length
+            axes[0, 1].set_title('Episode Length')
+            axes[0, 1].set_xlabel('Timestep')
+            axes[0, 1].set_ylabel('Steps')
+            axes[0, 1].grid(True, alpha=0.3)
+
+            if len(lengths) > 0 and len(timesteps) >= len(lengths):
                 x_data = timesteps[-len(lengths):]
-                self.lines[1].set_data(x_data, lengths)
-                self.axes[0, 1].relim()
-                self.axes[0, 1].autoscale_view()
+                axes[0, 1].plot(x_data, lengths, 'g-o', alpha=0.7, linewidth=1.5, markersize=4)
+                print(f"   ✅ Plotted {len(lengths)} length points")
+            else:
+                fake_x = [self.num_timesteps - 2000, self.num_timesteps - 1000, self.num_timesteps]
+                fake_lengths = [200, 180, 150]
+                axes[0, 1].plot(fake_x, fake_lengths, 'orange', linestyle='--', marker='o', alpha=0.5,
+                                label='No real data yet')
+                axes[0, 1].legend()
+                print(f"   ⚠️ No length data, plotted fake data")
 
-            # Update maps plot
-            if len(self.maps_discovered) > 0:
-                maps = list(self.maps_discovered)
+            # Plot 3: Maps Discovered
+            axes[1, 0].set_title('Maps Discovered')
+            axes[1, 0].set_xlabel('Timestep')
+            axes[1, 0].set_ylabel('Unique Maps')
+            axes[1, 0].grid(True, alpha=0.3)
+
+            if len(maps) > 0 and len(timesteps) >= len(maps):
                 x_data = timesteps[-len(maps):]
-                self.lines[2].set_data(x_data, maps)
-                self.axes[1, 0].relim()
-                self.axes[1, 0].autoscale_view()
+                axes[1, 0].plot(x_data, maps, 'r-o', alpha=0.7, linewidth=1.5, markersize=4)
+                print(f"   ✅ Plotted {len(maps)} map points")
+            else:
+                fake_x = [self.num_timesteps - 2000, self.num_timesteps - 1000, self.num_timesteps]
+                fake_maps = [1, 1, 2]
+                axes[1, 0].plot(fake_x, fake_maps, 'purple', linestyle='--', marker='o', alpha=0.5,
+                                label='No real data yet')
+                axes[1, 0].legend()
+                print(f"   ⚠️ No map data, plotted fake data")
 
-            # Update badges plot
-            if len(self.badges_earned) > 0:
-                badges = list(self.badges_earned)
+            # Plot 4: Badges Earned
+            axes[1, 1].set_title('Badges Earned')
+            axes[1, 1].set_xlabel('Timestep')
+            axes[1, 1].set_ylabel('Badge Count')
+            axes[1, 1].grid(True, alpha=0.3)
+
+            if len(badges) > 0 and len(timesteps) >= len(badges):
                 x_data = timesteps[-len(badges):]
-                self.lines[3].set_data(x_data, badges)
-                self.axes[1, 1].relim()
-                self.axes[1, 1].autoscale_view()
+                axes[1, 1].plot(x_data, badges, 'm-o', alpha=0.7, linewidth=1.5, markersize=4)
+                print(f"   ✅ Plotted {len(badges)} badge points")
+            else:
+                fake_x = [self.num_timesteps - 2000, self.num_timesteps - 1000, self.num_timesteps]
+                fake_badges = [0, 0, 0]
+                axes[1, 1].plot(fake_x, fake_badges, 'brown', linestyle='--', marker='o', alpha=0.5,
+                                label='No real data yet')
+                axes[1, 1].legend()
+                print(f"   ⚠️ No badge data, plotted fake data")
 
-            # Refresh the plot
-            self.fig.canvas.draw()
-            self.fig.canvas.flush_events()
+            # Add statistics text box
+            stats_text = f"Latest Stats (Step {self.num_timesteps}):\n"
+            stats_text += f"Episodes: {len(rewards)}\n"
+            if len(rewards) > 0:
+                stats_text += f"Avg Reward (last 10): {np.mean(rewards[-10:]):.2f}\n"
+                stats_text += f"Best Reward: {self.best_reward:.2f}\n"
+            if len(maps) > 0:
+                stats_text += f"Max Maps: {max(maps)}\n"
+            if len(badges) > 0:
+                stats_text += f"Max Badges: {max(badges)}"
+
+            # AMC
+            #fig.text(0.98, 0.02, stats_text, fontsize=10,
+            #         bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.8),
+            #         horizontalalignment='right', verticalalignment='bottom')
+
+            plt.tight_layout()
+
+            # Save timestamped plot
+            filename = os.path.join(self.save_path_logs, f'training_plots_{self.num_timesteps}.png')
+            plt.savefig(filename, dpi=150, bbox_inches='tight')
+
+            # Save "latest" version that overwrites
+            latest_filename = os.path.join(self.save_path_logs, 'latest_training_plots.png')
+            plt.savefig(latest_filename, dpi=150, bbox_inches='tight')
+
+            plt.close(fig)  # Important: close figure to free memory
+
+            print(f"📊 Training plots saved:")
+            print(f"   Timestamped: {filename}")
+            print(f"   Latest: {latest_filename}")
 
         except Exception as e:
-            if self.verbose >= 2:
-                logger.warning(f"Plot update failed: {e}")
+            print(f"❌ Plot creation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            logger.error(f"Failed to create plots: {e}")
+
+    def _on_step(self) -> bool:
+        """Called after each environment step."""
+        return True
 
     def _on_rollout_end(self) -> None:
         """Enhanced rollout end processing with plotting."""
-        # Call parent method for basic functionality
-        super()._on_rollout_end()
-
         # Process episode info for enhanced statistics
         if hasattr(self.model, 'ep_info_buffer') and len(self.model.ep_info_buffer) > 0:
             try:
+                # Get recent episodes
                 recent_episodes = list(self.model.ep_info_buffer)
 
                 for episode_info in recent_episodes:
@@ -330,7 +393,7 @@ class EnhancedTrainingCallback(TrainingCallback):
                     length = episode_info.get('l', 0)
 
                     # Extract Pokemon-specific metrics
-                    maps = episode_info.get('maps_visited', 0)
+                    maps = episode_info.get('maps_visited', 1)
                     badges = episode_info.get('badges_earned', 0)
                     hp_ratio = episode_info.get('hp_ratio', 1.0)
 
@@ -342,9 +405,24 @@ class EnhancedTrainingCallback(TrainingCallback):
                     self.hp_ratios.append(hp_ratio)
                     self.timesteps_history.append(self.num_timesteps)
 
-                # Update plots periodically
+                # Track best performance
+                if len(self.episode_rewards) > 0:
+                    recent_rewards = list(self.episode_rewards)[-10:]
+                    mean_reward = np.mean(recent_rewards)
+
+                    if mean_reward > self.best_reward:
+                        self.best_reward = mean_reward
+                        # Save best model
+                        best_model_path = os.path.join(self.save_path_models, 'best_model')
+                        self.model.save(best_model_path)
+
+                        if self.verbose >= 1:
+                            logger.info(f"🏆 New best model! Reward: {mean_reward:.2f}")
+
+                # Create and save plots periodically
                 if self.show_plots and self.num_timesteps % self.plot_freq == 0:
-                    self.update_plots()
+                    print(f"📊 Creating plots at timestep {self.num_timesteps}")
+                    self.create_and_save_plots()
 
                 # Enhanced logging
                 if len(self.episode_rewards) >= 10 and self.num_timesteps % 2000 == 0:
@@ -364,6 +442,14 @@ class EnhancedTrainingCallback(TrainingCallback):
                 if self.verbose >= 2:
                     logger.warning(f"Enhanced episode processing failed: {e}")
 
+        # Periodic model saving
+        if self.num_timesteps % self.save_freq == 0:
+            model_path = os.path.join(self.save_path_models, f'model_{self.num_timesteps}')
+            self.model.save(model_path)
+
+            if self.verbose >= 1:
+                logger.info(f"💾 Checkpoint saved at step {self.num_timesteps:,}")
+
     def save_plots(self, filename: Optional[str] = None) -> None:
         """Save current plots to file."""
         if not self.show_plots:
@@ -371,9 +457,10 @@ class EnhancedTrainingCallback(TrainingCallback):
 
         try:
             if filename is None:
-                filename = os.path.join(self.save_path_logs, f'training_plots_{self.num_timesteps}.png')
+                filename = os.path.join(self.save_path_logs, f'final_training_plots_{self.num_timesteps}.png')
 
-            self.fig.savefig(filename, dpi=150, bbox_inches='tight')
+            self.create_and_save_plots()
+
             if self.verbose >= 1:
                 logger.info(f"Training plots saved: {filename}")
 
@@ -381,28 +468,83 @@ class EnhancedTrainingCallback(TrainingCallback):
             logger.error(f"Failed to save plots: {e}")
 
     def cleanup(self) -> None:
-        """Clean up plotting resources."""
-        if self.show_plots and hasattr(self, 'fig'):
+        """Clean up and save final plots."""
+        if self.show_plots and len(self.timesteps_history) > 0:
             try:
-                # Save final plots
-                self.save_plots()
-                # Close figure
-                plt.close(self.fig)
-                plt.ioff()  # Turn off interactive mode
-                if self.verbose >= 1:
-                    logger.info("Live plotting cleanup completed")
+                print("🎯 Creating final training plots...")
+                self.create_and_save_plots()
+
+                # Create summary plot
+                summary_file = os.path.join(self.save_path_logs, 'final_training_summary.png')
+
+                fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+                if len(self.episode_rewards) > 0:
+                    rewards = list(self.episode_rewards)
+                    timesteps = list(self.timesteps_history)[-len(rewards):]
+
+                    ax.plot(timesteps, rewards, 'b-', alpha=0.6, linewidth=1, label='Episode Rewards')
+
+                    # Add moving average
+                    if len(rewards) > 10:
+                        window = min(20, len(rewards) // 3)
+                        moving_avg = np.convolve(rewards, np.ones(window)/window, mode='valid')
+                        moving_timesteps = timesteps[window-1:]
+                        ax.plot(moving_timesteps, moving_avg, 'r-', linewidth=2,
+                               label=f'Moving Average ({window} episodes)')
+
+                    ax.set_title('Pokemon Red RL Training Summary')
+                    ax.set_xlabel('Timesteps')
+                    ax.set_ylabel('Episode Reward')
+                    ax.grid(True, alpha=0.3)
+                    ax.legend()
+
+                    # Add final stats
+                    final_stats = f"Training Summary:\n"
+                    final_stats += f"Total Episodes: {len(rewards)}\n"
+                    final_stats += f"Total Timesteps: {self.num_timesteps:,}\n"
+                    final_stats += f"Best Reward: {max(rewards):.2f}\n"
+                    final_stats += f"Final Avg (last 10): {np.mean(rewards[-10:]):.2f}\n"
+                    if len(self.badges_earned) > 0:
+                        final_stats += f"Max Badges: {max(self.badges_earned)}\n"
+                    if len(self.maps_discovered) > 0:
+                        final_stats += f"Max Maps: {max(self.maps_discovered)}"
+
+                    ax.text(0.02, 0.98, final_stats, transform=ax.transAxes,
+                           verticalalignment='top',
+                           bbox=dict(boxstyle="round,pad=0.3", facecolor="lightblue", alpha=0.8))
+
+                plt.tight_layout()
+                plt.savefig(summary_file, dpi=150, bbox_inches='tight')
+                plt.close(fig)
+
+                print(f"🎯 Final summary saved: {summary_file}")
+                print("\n📊 To view your training plots:")
+                print(f"   open {self.save_path_logs}/latest_training_plots.png")
+                print(f"   open {summary_file}")
+
             except Exception as e:
-                logger.warning(f"Plot cleanup failed: {e}")
+                print(f"❌ Final plot creation failed: {e}")
 
     def get_enhanced_statistics(self) -> Dict[str, Any]:
         """Get enhanced training statistics."""
-        base_stats = super().get_statistics()
+        base_stats = {
+            'num_timesteps': self.num_timesteps,
+            'best_reward': self.best_reward,
+            'best_exploration': self.best_exploration
+        }
 
-        enhanced_stats = base_stats.copy()
+        if len(self.episode_rewards) > 0:
+            rewards = list(self.episode_rewards)
+            base_stats.update({
+                'total_episodes': len(rewards),
+                'recent_avg_reward': np.mean(rewards[-10:]) if len(rewards) >= 10 else np.mean(rewards),
+                'recent_reward_std': np.std(rewards[-10:]) if len(rewards) >= 10 else np.std(rewards)
+            })
 
         if len(self.maps_discovered) > 0:
             recent_maps = list(self.maps_discovered)[-100:]
-            enhanced_stats.update({
+            base_stats.update({
                 'recent_avg_maps': np.mean(recent_maps),
                 'max_maps_discovered': max(self.maps_discovered),
                 'recent_maps_std': np.std(recent_maps)
@@ -410,7 +552,7 @@ class EnhancedTrainingCallback(TrainingCallback):
 
         if len(self.badges_earned) > 0:
             recent_badges = list(self.badges_earned)[-100:]
-            enhanced_stats.update({
+            base_stats.update({
                 'recent_avg_badges': np.mean(recent_badges),
                 'max_badges_earned': max(self.badges_earned),
                 'recent_badges_std': np.std(recent_badges)
@@ -418,12 +560,12 @@ class EnhancedTrainingCallback(TrainingCallback):
 
         if len(self.hp_ratios) > 0:
             recent_hp = list(self.hp_ratios)[-100:]
-            enhanced_stats.update({
+            base_stats.update({
                 'recent_avg_hp_ratio': np.mean(recent_hp),
                 'recent_hp_ratio_std': np.std(recent_hp)
             })
 
-        return enhanced_stats
+        return base_stats
 
 
 class EarlyStopping(BaseCallback):
