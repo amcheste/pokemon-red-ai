@@ -4,3 +4,8 @@ version = "0.1.0"
 
 [project.scripts]
 pokemon-ai = "pokemon_red_ai.cli.commands:main"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::UserWarning:sdl2._internal",
+]

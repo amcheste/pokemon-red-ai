@@ -38,8 +38,8 @@ class PokemonRedGymEnv(gym.Env):
     def __init__(self,
                  rom_path: str,
                  headless: bool = True,
-                 max_episode_steps: int = 15000,  # UPDATED: Increased from 5000
-                 reward_strategy: str = "exploration",  # UPDATED: Changed default from "standard"
+                 max_episode_steps: int = 15000,
+                 reward_strategy: str = "exploration",
                  reward_config: Optional[RewardConfig] = None,
                  screen_size: Tuple[int, int] = (80, 72),
                  observation_type: str = "multi_modal"):
@@ -49,8 +49,8 @@ class PokemonRedGymEnv(gym.Env):
         Args:
             rom_path: Path to Pokemon Red ROM file
             headless: If True, runs without display window
-            max_episode_steps: Maximum steps per episode (UPDATED: increased default)
-            reward_strategy: Reward calculation strategy (UPDATED: default to exploration)
+            max_episode_steps: Maximum steps per episode (increased default)
+            reward_strategy: Reward calculation strategy (default to exploration)
             reward_config: Custom reward configuration
             screen_size: Target screen size (width, height)
             observation_type: Type of observation ('multi_modal', 'minimal', 'screen_only')
@@ -70,7 +70,7 @@ class PokemonRedGymEnv(gym.Env):
             speed_multiplier=0  # Unlimited speed for training
         )
 
-        # UPDATED: Use improved reward configuration if none provided
+        # Use improved reward configuration if none provided
         if reward_config is None and reward_strategy == "exploration":
             reward_config = RewardConfig(
                 time_penalty=-0.001,
@@ -118,7 +118,7 @@ class PokemonRedGymEnv(gym.Env):
         self.visited_locations: Set[Tuple[int, int, int]] = set()
         self.episode_info = {}
 
-        # ADDED: Enhanced tracking for better monitoring
+        # Enhanced tracking for better monitoring
         self.episode_count = 0
         self.total_exploration_rewards = 0
         self.total_progress_rewards = 0
@@ -164,7 +164,7 @@ class PokemonRedGymEnv(gym.Env):
         # Calculate reward using the configured strategy
         reward = self.reward_calculator.calculate_reward(game_state)
 
-        # ADDED: Track reward components for monitoring
+        # Track reward components for monitoring
         components = self.reward_calculator.get_reward_breakdown()
         if 'exploration' in components:
             self.total_exploration_rewards += components['exploration']
@@ -188,7 +188,7 @@ class PokemonRedGymEnv(gym.Env):
             logger.debug(f"Episode truncated: Max steps reached ({self.max_episode_steps})")
             return False, True
 
-        # UPDATED: More lenient termination conditions
+        # More lenient termination conditions
         game_state = self.game.get_comprehensive_state()
 
         # Only terminate if Pokemon has been unconscious for too long
@@ -196,7 +196,7 @@ class PokemonRedGymEnv(gym.Env):
                 game_state['stats']['max_hp'] > 0):
             if hasattr(self, '_unconscious_steps'):
                 self._unconscious_steps += 1
-                # UPDATED: Longer grace period (1000 steps instead of 500)
+                # Longer grace period (1000 steps instead of 500)
                 if self._unconscious_steps > 1000:
                     logger.debug("Episode terminated: Pokemon unconscious too long")
                     return True, False
@@ -205,7 +205,7 @@ class PokemonRedGymEnv(gym.Env):
         else:
             self._unconscious_steps = 0
 
-        # ADDED: Early termination if completely stuck (no exploration for very long time)
+        # Early termination if completely stuck (no exploration for very long time)
         if (self.episode_steps > 1000 and
             self.episode_steps - self.last_significant_progress > 2000 and
             len(self.visited_locations) < 10):
@@ -226,7 +226,7 @@ class PokemonRedGymEnv(gym.Env):
             if map_id != 0:
                 unique_maps.add(map_id)
 
-        # UPDATED: Enhanced info with additional metrics
+        # Enhanced info with additional metrics
         info = {
             # Episode metrics
             'episode_steps': self.episode_steps,
@@ -249,7 +249,7 @@ class PokemonRedGymEnv(gym.Env):
             'maps_visited': len(unique_maps),
             'unique_maps_list': list(unique_maps),
 
-            # ADDED: Enhanced tracking metrics
+            # Enhanced tracking metrics
             'exploration_efficiency': len(self.visited_locations) / max(self.episode_steps, 1),
             'maps_discovered_this_episode': len(unique_maps),
             'total_exploration_rewards': self.total_exploration_rewards,
@@ -297,7 +297,7 @@ class PokemonRedGymEnv(gym.Env):
         # Get episode info
         info = self._get_info()
 
-        # UPDATED: Enhanced periodic logging with exploration focus
+        # Enhanced periodic logging with exploration focus
         if self.episode_steps % 200 == 0:  # More frequent logging
             unique_maps = len(set(loc[2] for loc in self.visited_locations if loc[2] != 0))
             logger.debug(f"Step {self.episode_steps}: Map {position['map']}, "
@@ -322,7 +322,7 @@ class PokemonRedGymEnv(gym.Env):
         # Handle seed for reproducibility
         super().reset(seed=seed)
 
-        # UPDATED: Enhanced episode tracking reset
+        # Enhanced episode tracking reset
         self.episode_steps = 0
         self.episode_reward = 0
         self.visited_locations.clear()
@@ -330,7 +330,7 @@ class PokemonRedGymEnv(gym.Env):
         self.total_episodes += 1
         self.episode_count += 1
 
-        # ADDED: Reset enhanced tracking
+        # Reset enhanced tracking
         self.total_exploration_rewards = 0
         self.total_progress_rewards = 0
         self.maps_discovered_this_episode = 0
@@ -384,7 +384,7 @@ class PokemonRedGymEnv(gym.Env):
         if mode == 'rgb_array':
             return self.game.get_screen_array()
         elif mode == 'human':
-            # UPDATED: Enhanced display with exploration info
+            # Enhanced display with exploration info
             game_state = self.game.get_comprehensive_state()
             position = game_state['position']
             stats = game_state['stats']
