@@ -141,7 +141,7 @@ def main(ctx):
 def train(rom_path, config_path, save_dir, verbose, timesteps, algorithm, reward_strategy,
           observation_type, show_game, show_plots, monitor_mode, learning_rate, batch_size,
           save_freq, max_episode_steps, clean_start):
-    """🚀 Train a Pokemon Red RL agent with improved exploration-focused settings."""
+    """🚀 Train a Pokemon Red RL game with improved exploration-focused settings."""
     setup_logging(verbose)
 
     if monitor_mode:

@@ -2,7 +2,7 @@
 Agent-specific test fixtures and configuration.
 
 This conftest.py file contains fixtures specifically for testing the
-Pokemon Red agent components (agent.py, controls.py, memory.py).
+Pokemon Red game components (game.py, controls.py, memory.py).
 """
 
 import pytest
@@ -16,10 +16,10 @@ from pokemon_red_ai.game.controls import ScreenType
 
 @pytest.fixture
 def mock_pyboy_for_agent():
-    """Create a comprehensive PyBoy mock specifically for agent testing."""
+    """Create a comprehensive PyBoy mock specifically for game testing."""
     mock = Mock()
 
-    # Memory mock with specific behaviors for agent tests
+    # Memory mock with specific behaviors for game tests
     mock.memory = Mock()
     mock.memory.__getitem__ = Mock(return_value=0)
 
@@ -50,7 +50,7 @@ def mock_pyboy_for_agent():
 
 @pytest.fixture
 def agent_memory_state():
-    """Provide realistic memory state for agent testing."""
+    """Provide realistic memory state for game testing."""
     return {
         MEMORY_ADDRESSES['player_x']: 5,
         MEMORY_ADDRESSES['player_y']: 5,
@@ -72,7 +72,7 @@ def agent_memory_state():
 
 @pytest.fixture
 def mock_agent_memory(agent_memory_state):
-    """Create a mock memory with realistic agent state."""
+    """Create a mock memory with realistic game state."""
     mock = Mock()
     mock.__getitem__ = Mock(side_effect=lambda addr: agent_memory_state.get(addr, 0))
     return mock
@@ -159,7 +159,7 @@ def screen_detection_scenarios():
 
 @pytest.fixture
 def mock_rom_file(tmp_path):
-    """Create a temporary ROM file for agent testing."""
+    """Create a temporary ROM file for game testing."""
     rom_file = tmp_path / "test_pokemon.gb"
     # Create a 1MB file (Pokemon Red ROM size)
     with open(rom_file, 'wb') as f:
@@ -169,7 +169,7 @@ def mock_rom_file(tmp_path):
 
 @pytest.fixture
 def mock_successful_agent():
-    """Create a mock agent that behaves successfully for testing."""
+    """Create a mock game that behaves successfully for testing."""
     mock = Mock()
     mock.rom_path = "test.gb"
     mock.show_window = False
