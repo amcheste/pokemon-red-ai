@@ -578,25 +578,14 @@ pokemon-ai train --rom PokemonRed.gb -vv
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+Contributions are welcome! Please see our [Developer Guide](DEVELOPER_GUIDE.md) for detailed information about:
 
-### Development Setup
+- Project architecture and design patterns
+- Development setup and workflow
+- Testing strategies and conventions
+- How to add new features
 
-```bash
-# Clone repository
-git clone https://github.com/yourusername/pokemon-red-ai.git
-cd pokemon-red-ai
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install in development mode
-pip install -e .
-
-# Run tests
-python -m pytest tests/
-```
+For quick contributions, check out our [Contributing Guidelines](#contributing-guidelines) below.
 
 ## 📝 Citation
 
@@ -643,7 +632,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Multi-agent training environments
 - Advanced save state management
 - Automated hyperparameter optimization
-- Support for other Pokemon games
 
 ## ⭐ Star History
 
