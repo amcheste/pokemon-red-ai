@@ -50,7 +50,7 @@ def mock_pyboy_for_agent():
 
 @pytest.fixture
 def agent_memory_state():
-    """Provide realistic memory state for game testing."""
+    """Provide realistic memory state for agent testing."""
     return {
         MEMORY_ADDRESSES['player_x']: 5,
         MEMORY_ADDRESSES['player_y']: 5,
