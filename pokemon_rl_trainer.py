@@ -2,7 +2,7 @@
 Complete Pokemon Red Reinforcement Learning Training System
 
 This module provides a comprehensive RL training setup for Pokemon Red including:
-- Game interface and control using proven working agent
+- Game interface and control using proven working game
 - Gymnasium environment wrapper
 - Training infrastructure
 - Progress visualization
@@ -50,7 +50,7 @@ class PokemonRedAgent:
 
     def __init__(self, rom_path, show_window=True):
         """
-        Initialize the Pokemon Red agent
+        Initialize the Pokemon Red game
 
         Args:
             rom_path: Path to Pokemon Red ROM file
@@ -547,7 +547,7 @@ class PokemonRedGymEnv(gym.Env):
         self.headless = headless
         self.max_episode_steps = max_episode_steps
 
-        # Initialize game agent using proven working version
+        # Initialize game game using proven working version
         self.game = PokemonRedAgent(rom_path, show_window=not headless)
 
         # Define action space (8 Game Boy buttons)
