@@ -48,7 +48,7 @@ class PokemonTrainer:
             save_dir: Directory to save training artifacts
             reward_strategy: Reward calculation strategy
             reward_config: Custom reward configuration
-            observation_type: Type of observations for the game
+            observation_type: Type of observations for the agent
         """
         self.rom_path = rom_path
         self.save_dir = save_dir
@@ -163,7 +163,7 @@ class PokemonTrainer:
               save_freq: int = 10000,
               **model_kwargs) -> None:
         """
-        Train Pokemon Red AI game.
+        Train Pokemon Red AI agent.
 
         Args:
             total_timesteps: Total training timesteps

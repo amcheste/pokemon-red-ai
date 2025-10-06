@@ -106,7 +106,7 @@ trainer = PokemonTrainer(
     save_dir="./training_output/"
 )
 
-# Train game with improved settings
+# Train agent with improved settings
 trainer.train(
     total_timesteps=500000,  # 5x more training
     show_plots=True

@@ -2,7 +2,7 @@
 Observation processing utilities for Pokemon Red RL environment.
 
 This module handles screen processing, observation space definition,
-and state representation for the RL game.
+and state representation for the RL agent.
 """
 
 import numpy as np

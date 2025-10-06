@@ -50,7 +50,7 @@ class PokemonRedAgent:
 
     def __init__(self, rom_path: str, show_window: bool = False):
         """
-        Initialize Pokemon Red game
+        Initialize Pokemon Red agent
 
         Args:
             rom_path: Path to Pokemon Red ROM file
@@ -306,7 +306,7 @@ class PokemonRedGymEnv(gym.Env):
         self.headless = headless
         self.max_episode_steps = max_episode_steps
 
-        # Initialize game game
+        # Initialize game agent
         self.game = PokemonRedAgent(rom_path, show_window=not headless)
 
         # Define action space (8 Game Boy buttons)

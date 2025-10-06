@@ -44,7 +44,7 @@ class PokemonRedAgent:
     def __init__(self, rom_path: str, show_window: bool = True,
                  speed_multiplier: int = 1, enable_save_states: bool = False):
         """
-        Initialize the Pokemon Red game.
+        Initialize the Pokemon Red agent.
 
         Args:
             rom_path: Path to Pokemon Red ROM file

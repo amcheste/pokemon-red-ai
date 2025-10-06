@@ -3,7 +3,7 @@ Pokemon Red Game Interface Module
 
 This module provides the core game interface components for interacting with
 Pokemon Red through PyBoy emulation, including memory management, input controls,
-and the main game class.
+and the main agent class.
 """
 
 # Import order matters to avoid circular dependencies
@@ -41,12 +41,12 @@ from .controls import (
     get_input_state
 )
 
-# Then import the main game that depends on the utilities
+# Then import the main agent that depends on the utilities
 from .agent import PokemonRedAgent
 
 # Public API - what users should import
 __all__ = [
-    # Main game class
+    # Main agent class
     "PokemonRedAgent",
 
     # Memory constants

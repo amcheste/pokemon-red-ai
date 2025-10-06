@@ -1,7 +1,7 @@
 """
 Pokemon Red Gymnasium environment implementation.
 
-This module provides the main RL environment that integrates the game game,
+This module provides the main RL environment that integrates the game agent,
 observation processing, and reward calculation into a standard Gymnasium interface.
 """
 
@@ -63,7 +63,7 @@ class PokemonRedGymEnv(gym.Env):
         self.screen_size = screen_size
         self.observation_type = observation_type
 
-        # Initialize game game
+        # Initialize game agent
         self.game = PokemonRedAgent(
             rom_path,
             show_window=not headless,
