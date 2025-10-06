@@ -10,3 +10,4 @@ pokemon_red_ai/utils/__pycache__/
 tests/__pycache__/
 tests/unit/game/__pycache__/
 tests/unit/environment/__pycache__/
+tests/unit/training/__pycache__/
