@@ -23,8 +23,8 @@ Usage:
 
     Direct game interface:
         from pokemon_red_ai import PokemonRedAgent
-        agent = PokemonRedAgent("PokemonRed.gb")
-        agent.run_opening_sequence()
+        game = PokemonRedAgent("PokemonRed.gb")
+        game.run_opening_sequence()
 """
 
 __version__ = "0.1.0"

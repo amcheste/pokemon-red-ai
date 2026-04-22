@@ -1,6 +1,37 @@
 [project]
 name = "pokemon-red-ai"
-version = "0.1.0"
+version = "0.2.0"
+description = "Reinforcement learning for Pokemon Red — research toolkit and paper-grade experimental harness."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Alan Chester", email = "amcheste@gmail.com" },
+]
+keywords = [
+    "reinforcement-learning",
+    "pokemon",
+    "pyboy",
+    "stable-baselines3",
+    "research",
+    "rl-benchmark",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/amcheste/pokemon-red-ai"
+Repository = "https://github.com/amcheste/pokemon-red-ai"
+Issues = "https://github.com/amcheste/pokemon-red-ai/issues"
 
 [project.scripts]
 pokemon-ai = "pokemon_red_ai.cli.commands:main"
@@ -8,4 +39,14 @@ pokemon-ai = "pokemon_red_ai.cli.commands:main"
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore::UserWarning:sdl2._internal",
+]
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "-ra",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests that require a real ROM or PyBoy session",
+    "paper: marks tests that validate paper-relevant invariants (eval harness, seeding, reward determinism)",
 ]
