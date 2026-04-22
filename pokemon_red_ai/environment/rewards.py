@@ -7,9 +7,9 @@ strategies and component tracking for analysis.
 
 import numpy as np
 import logging
-from typing import Dict, Any, Optional, Set, Tuple
+from typing import Dict, Any, List, Optional, Set, Tuple
 from collections import defaultdict, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
@@ -439,6 +439,225 @@ class SparseRewardCalculator(BaseRewardCalculator):
         return reward
 
 
+@dataclass
+class EventRewardConfig:
+    """Configuration for the event-flag-based reward calculator.
+
+    This is kept separate from ``RewardConfig`` because the event system
+    uses a fundamentally different reward mechanism (one-shot flag
+    transitions rather than per-step shaping).
+    """
+    # Exploration (same mechanics as ExplorationFocusedCalculator)
+    exploration_reward: float = 3.0         # Per new tile
+    new_map_reward: float = 50.0            # Per new map
+
+    # Per-step penalty to encourage efficiency
+    time_penalty: float = -0.0005
+
+    # Level-up reward (still useful for combat progress)
+    level_reward_multiplier: float = 15.0
+
+    # Badge reward (on top of event flag reward)
+    badge_reward_multiplier: float = 100.0
+
+    # Death penalty  (mild — dying in Viridian Forest is expected)
+    death_penalty: float = -20.0
+
+    # Event flag reward scaling factor (multiplied with per-flag weights
+    # from ``event_flags.FLAG_REWARD_WEIGHTS``)
+    event_flag_scale: float = 1.0
+
+    # Bonus for reaching event milestones (N flags triggered)
+    milestone_thresholds: Dict[int, float] = field(default_factory=lambda: {
+        5:  50.0,     # ~Parcel quest complete
+        10: 150.0,    # Through Viridian Forest
+        14: 300.0,    # Standing in front of Brock
+        16: 500.0,    # Brock defeated + TM collected
+    })
+
+
+class EventProgressRewardCalculator(BaseRewardCalculator):
+    """Reward calculator driven by game event flags.
+
+    This is the **paper reward function** referenced in
+    ``analysis_plan.md`` section 5.2.  All three treatments (pixel,
+    symbolic, hybrid) share this exact calculator so the only
+    independent variable is the observation representation.
+
+    Reward sources, in priority order:
+
+    1. **Event flag transitions** — one-time rewards when a flag flips
+       0 -> 1.  Weights are in ``event_flags.FLAG_REWARD_WEIGHTS``.
+    2. **Exploration** — per-tile and per-map bonuses (dense signal that
+       guides the agent out of Pallet Town before any flags fire).
+    3. **Level-ups** — small bonus for combat progress.
+    4. **Time penalty** — mild, to break ties between otherwise-equal
+       trajectories.
+    5. **Death penalty** — mild, to discourage suicidal exploration.
+    6. **Milestone bonuses** — lump-sum rewards at flag-count thresholds.
+
+    Note: this calculator requires ``current_state`` to contain an
+    ``'event_flags'`` key (a dict[str, bool]) populated by the
+    environment's ``step()`` method.  If the key is missing, event-flag
+    rewards are silently skipped (with a warning on the first miss).
+    """
+
+    def __init__(self, config: Optional[EventRewardConfig] = None,
+                 base_config: Optional[RewardConfig] = None):
+        super().__init__(base_config)
+        self.event_config = config or EventRewardConfig()
+        self._flag_tracker_state: Dict[str, bool] = {}
+        self._triggered_flags: Dict[str, bool] = {}
+        self._milestones_claimed: Set[int] = set()
+        self._warned_missing_flags = False
+
+    def reset(self) -> None:
+        """Reset calculator state for a new episode."""
+        super().reset()
+        self._flag_tracker_state.clear()
+        self._triggered_flags = {
+            name: False
+            for name in self._get_flag_names()
+        }
+        self._milestones_claimed.clear()
+        self._warned_missing_flags = False
+
+    @staticmethod
+    def _get_flag_names():
+        """Lazy import to avoid circular dependency at module level."""
+        from ..game.event_flags import BOULDER_PATH_FLAGS
+        return BOULDER_PATH_FLAGS
+
+    @staticmethod
+    def _get_flag_weights():
+        from ..game.event_flags import FLAG_REWARD_WEIGHTS
+        return FLAG_REWARD_WEIGHTS
+
+    def calculate_reward(self, current_state: Dict[str, Any]) -> float:
+        """Calculate reward from event flags + exploration + progress.
+
+        The ``current_state`` dict is expected to match the output of
+        ``memory.get_comprehensive_state()``, optionally enriched with
+        an ``'event_flags'`` key containing ``{flag_name: bool}``.
+        """
+        reward = 0.0
+        self.reward_components.clear()
+
+        position = current_state['position']
+        stats = current_state['stats']
+
+        # ---- 1. Event flag transitions ----
+        event_flags = current_state.get('event_flags')
+        if event_flags is not None:
+            flag_weights = self._get_flag_weights()
+            newly_set: List[str] = []
+
+            for name, is_set in event_flags.items():
+                if is_set and not self._flag_tracker_state.get(name, False):
+                    if not self._triggered_flags.get(name, False):
+                        newly_set.append(name)
+                        self._triggered_flags[name] = True
+
+            self._flag_tracker_state = dict(event_flags)
+
+            event_reward = 0.0
+            for flag_name in newly_set:
+                weight = flag_weights.get(flag_name, 10.0)
+                event_reward += weight * self.event_config.event_flag_scale
+
+            if event_reward > 0:
+                reward += event_reward
+                self.reward_components['event_flags'] = event_reward
+                self.reward_components['flags_this_step'] = len(newly_set)
+
+            # Milestone bonuses
+            n_triggered = sum(self._triggered_flags.values())
+            for threshold, bonus in self.event_config.milestone_thresholds.items():
+                if (n_triggered >= threshold
+                        and threshold not in self._milestones_claimed):
+                    self._milestones_claimed.add(threshold)
+                    reward += bonus
+                    self.reward_components[f'milestone_{threshold}'] = bonus
+        else:
+            if not self._warned_missing_flags:
+                logger.warning(
+                    "EventProgressRewardCalculator: 'event_flags' key missing "
+                    "from current_state. Event-flag rewards will not fire. "
+                    "Make sure the environment populates this field."
+                )
+                self._warned_missing_flags = True
+
+        # ---- 2. Exploration (dense signal for early training) ----
+        location_key = (position['x'], position['y'], position['map'])
+        if location_key not in self.visited_locations:
+            self.visited_locations.add(location_key)
+            exp_reward = self.event_config.exploration_reward
+            reward += exp_reward
+            self.reward_components['exploration'] = exp_reward
+
+        if position['map'] not in self.visited_maps and position['map'] != 0:
+            self.visited_maps.add(position['map'])
+            map_reward = self.event_config.new_map_reward
+            reward += map_reward
+            self.reward_components['new_map'] = map_reward
+
+        # ---- 3. Progress rewards (level-ups, badges) ----
+        if self.previous_state:
+            prev_stats = self.previous_state['stats']
+
+            level_diff = stats['level'] - prev_stats['level']
+            if level_diff > 0:
+                level_reward = level_diff * self.event_config.level_reward_multiplier
+                reward += level_reward
+                self.reward_components['level'] = level_reward
+
+            # Badge diff using proper bit-counting
+            curr_badges = bin(stats['badges']).count('1')
+            prev_badges = bin(prev_stats['badges']).count('1')
+            badge_diff = curr_badges - prev_badges
+            if badge_diff > 0:
+                badge_reward = badge_diff * self.event_config.badge_reward_multiplier
+                reward += badge_reward
+                self.reward_components['badge'] = badge_reward
+
+        # ---- 4. Time penalty ----
+        time_penalty = self.event_config.time_penalty
+        reward += time_penalty
+        self.reward_components['time'] = time_penalty
+
+        # ---- 5. Death penalty ----
+        if stats['current_hp'] == 0 and stats['max_hp'] > 0:
+            death_penalty = self.event_config.death_penalty
+            reward += death_penalty
+            self.reward_components['death'] = death_penalty
+
+        # ---- Store state for next step ----
+        self.previous_state = {
+            'position': position.copy(),
+            'stats': stats.copy(),
+        }
+
+        return reward
+
+    def get_event_progress(self) -> Dict[str, Any]:
+        """Return a summary of event-flag progress for logging.
+
+        Useful for W&B or TensorBoard custom metrics.
+        """
+        n_triggered = sum(self._triggered_flags.values())
+        return {
+            'flags_triggered': n_triggered,
+            'flags_total': len(self._triggered_flags),
+            'progress_fraction': (
+                n_triggered / max(len(self._triggered_flags), 1)
+            ),
+            'milestones_claimed': sorted(self._milestones_claimed),
+            'triggered_names': [
+                name for name, v in self._triggered_flags.items() if v
+            ],
+        }
+
+
 def create_reward_calculator(strategy: str = "standard",
                              config: RewardConfig = None) -> BaseRewardCalculator:
     """
@@ -455,7 +674,8 @@ def create_reward_calculator(strategy: str = "standard",
         'standard': StandardRewardCalculator,
         'exploration': ExplorationFocusedCalculator,
         'progress': ProgressFocusedCalculator,
-        'sparse': SparseRewardCalculator
+        'sparse': SparseRewardCalculator,
+        'events': EventProgressRewardCalculator,
     }
 
     if strategy not in calculators:
