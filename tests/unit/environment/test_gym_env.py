@@ -82,7 +82,7 @@ class TestPokemonRedGymEnvInitialization:
         env = PokemonRedGymEnv(str(mock_rom_file))
 
         assert isinstance(env.action_space, gym.spaces.Discrete)
-        assert env.action_space.n == 8  # 8 Game Boy buttons
+        assert env.action_space.n == 7  # 7 buttons (SELECT removed)
 
     def test_observation_space_multi_modal(self, mock_agent_class, mock_rom_file):
         """Test multi-modal observation space."""
@@ -162,9 +162,9 @@ class TestPokemonRedGymEnvStep:
         """Test that step calls agent properly."""
         env.reset()
 
-        env.step(2)  # SELECT button
+        env.step(2)  # START button (index 2 after SELECT removal)
 
-        env.game.step.assert_called_once_with('SELECT')
+        env.game.step.assert_called_once_with('START')
 
     def test_step_updates_visited_locations(self, env):
         """Test that visited locations are tracked."""
@@ -475,7 +475,7 @@ class TestPokemonRedGymEnvHelpers:
         meanings = env.get_action_meanings()
 
         assert isinstance(meanings, list)
-        assert len(meanings) == 8
+        assert len(meanings) == 7  # SELECT removed
         assert 'A' in meanings
         assert 'B' in meanings
 
