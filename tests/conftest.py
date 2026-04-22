@@ -271,7 +271,7 @@ def sample_memory_state():
 
 @pytest.fixture
 def agent_memory_state():
-    """Provide agent memory state for testing (alias for sample_memory_state)."""
+    """Provide game memory state for testing (alias for sample_memory_state)."""
     return {
         'player_x': 5,
         'player_y': 7,
