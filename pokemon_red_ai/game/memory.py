@@ -33,6 +33,12 @@ MEMORY_ADDRESSES = {
     'party_count': 0xD163,  # Number of Pokemon in party (0-6)
     'party_species_1': 0xD164,  # First Pokemon species ID
 
+    # Battle state
+    'battle_type': 0xD057,     # wIsInBattle: 0=overworld, 1=wild, 2=trainer
+
+    # Event flags (see pokemon_red_ai/game/event_flags.py for details)
+    'event_flags_start': 0xD747,  # wEventFlags: 320-byte bit-array
+
     # Additional useful addresses
     'money_low': 0xD347,  # Money low byte
     'money_mid': 0xD348,  # Money middle byte
