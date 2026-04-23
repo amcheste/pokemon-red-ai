@@ -346,8 +346,13 @@ def run_interactive(rom_path: str, save_dir: str, save_name: str) -> bool:
         while True:
             agent.pyboy.tick()
 
+
     except KeyboardInterrupt:
         logger.info("\nCtrl+C received — saving state...")
+
+        if agent is None:
+            logger.error("Cannot save: agent not initialized")
+            return False
 
         pos = read_player_position(agent.memory)
         stats = read_player_stats(agent.memory)
@@ -359,6 +364,7 @@ def run_interactive(rom_path: str, save_dir: str, save_name: str) -> bool:
         )
 
         ok = agent.save_save_state(state_path)
+
         if ok:
             try:
                 size_str = f" ({os.path.getsize(state_path):,} bytes)"
