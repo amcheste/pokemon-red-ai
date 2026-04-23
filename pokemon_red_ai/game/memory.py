@@ -264,6 +264,9 @@ def get_comprehensive_state(memory) -> Dict[str, Union[int, float, str, Dict]]:
     """
     Get comprehensive game state information.
 
+    Includes event flags and battle state when the ``event_flags``
+    module is available (added in PR #1).
+
     Args:
         memory: PyBoy memory object
 
@@ -275,7 +278,7 @@ def get_comprehensive_state(memory) -> Dict[str, Union[int, float, str, Dict]]:
     game_state = read_game_state(memory)
     money = read_money(memory)
 
-    return {
+    state = {
         'position': position,
         'stats': stats,
         'game_state': game_state,
@@ -285,3 +288,13 @@ def get_comprehensive_state(memory) -> Dict[str, Union[int, float, str, Dict]]:
         'in_game': is_in_game(memory),
         'is_alive': stats['current_hp'] > 0,
     }
+
+    # Event flags and battle state (PR #1 additions)
+    try:
+        from .event_flags import read_boulder_path_flags, read_battle_state
+        state['event_flags'] = read_boulder_path_flags(memory)
+        state['battle_state'] = read_battle_state(memory)
+    except ImportError:
+        pass  # event_flags module not available
+
+    return state
