@@ -1,5 +1,7 @@
 pokemon_training/
 PokemonRed.gb*
+*.state
+save_states/*.state
 .idea/
 pokemon_red_ai/__pycache__/
 pokemon_red_ai/cli/__pycache__/
