@@ -2,8 +2,8 @@
 Training callbacks for Pokemon Red RL.
 
 This module provides callback classes for monitoring and controlling
-the training process, including model saving, progress tracking, and
-live visualization.
+the training process, including model saving, progress tracking,
+live visualization, and Weights & Biases experiment tracking.
 
 macOS-compatible version that saves plots to files instead of displaying them live.
 """
@@ -729,3 +729,180 @@ class PerformanceMonitor(BaseCallback):
                 pass
 
         return stats
+
+
+class WandbCallback(BaseCallback):
+    """
+    Weights & Biases logging callback for Pokemon Red RL training.
+
+    Logs episode-level metrics (reward, length, maps, badges, event
+    flags, HP) to a W&B run so training curves are available in the
+    web dashboard in real time.  Also saves model checkpoints as W&B
+    artifacts for reproducibility.
+
+    Usage::
+
+        import wandb
+        run = wandb.init(project="pokemon-red-ai", config={...})
+        callback = WandbCallback(save_freq=50_000, save_path="./training")
+        model.learn(callback=callback)
+        run.finish()
+
+    The callback does NOT call ``wandb.init()`` or ``wandb.finish()``
+    itself — the caller owns the run lifecycle so multiple callbacks
+    can share one run.
+    """
+
+    def __init__(
+        self,
+        save_freq: int = 50_000,
+        save_path: str = "./models/",
+        log_freq: int = 1,
+        verbose: int = 1,
+    ):
+        """
+        Args:
+            save_freq: How often (in timesteps) to save a model
+                checkpoint and upload it as a W&B artifact.
+            save_path: Local directory for model checkpoints.
+            log_freq: Log to W&B every *N* rollout ends (1 = every
+                rollout, 2 = every other, etc.).
+            verbose: Verbosity level (0 = silent, 1 = info).
+        """
+        super().__init__(verbose)
+        self.save_freq = save_freq
+        self.save_path = save_path
+        self.save_path_models = os.path.join(save_path, "models")
+        os.makedirs(self.save_path_models, exist_ok=True)
+
+        self.log_freq = log_freq
+        self._rollout_count = 0
+
+        self.best_reward = -float("inf")
+
+        # Lazy import so the rest of the module works without wandb
+        try:
+            import wandb as _wandb
+
+            self._wandb = _wandb
+        except ImportError:
+            raise ImportError(
+                "wandb is required for WandbCallback. "
+                "Install with: pip install wandb"
+            )
+
+        if self.verbose >= 1:
+            logger.info(
+                "WandbCallback initialised "
+                f"(save_freq={save_freq}, log_freq={log_freq})"
+            )
+
+    # ------------------------------------------------------------------
+    # SB3 callback interface
+    # ------------------------------------------------------------------
+
+    def _on_step(self) -> bool:
+        return True
+
+    def _on_rollout_end(self) -> None:
+        self._rollout_count += 1
+
+        # Skip logging on some rollouts if log_freq > 1
+        if self._rollout_count % self.log_freq != 0:
+            return
+
+        metrics: Dict[str, Any] = {"global_step": self.num_timesteps}
+
+        # ── Episode-buffer metrics ───────────────────────────────────
+        if (
+            hasattr(self.model, "ep_info_buffer")
+            and len(self.model.ep_info_buffer) > 0
+        ):
+            try:
+                episodes = list(self.model.ep_info_buffer)
+                rewards = [e["r"] for e in episodes if "r" in e]
+                lengths = [e["l"] for e in episodes if "l" in e]
+
+                if rewards:
+                    metrics["episode/reward_mean"] = float(np.mean(rewards))
+                    metrics["episode/reward_max"] = float(np.max(rewards))
+                    metrics["episode/reward_min"] = float(np.min(rewards))
+                if lengths:
+                    metrics["episode/length_mean"] = float(np.mean(lengths))
+
+                # Pokemon-specific keys injected by the gym env's info
+                # dict (via Monitor wrapper)
+                maps = [e["maps_visited"] for e in episodes if "maps_visited" in e]
+                badges = [e["badges_earned"] for e in episodes if "badges_earned" in e]
+                locations = [
+                    e["locations_visited"]
+                    for e in episodes
+                    if "locations_visited" in e
+                ]
+                hp = [e["hp_ratio"] for e in episodes if "hp_ratio" in e]
+
+                if maps:
+                    metrics["game/maps_visited_mean"] = float(np.mean(maps))
+                    metrics["game/maps_visited_max"] = int(np.max(maps))
+                if badges:
+                    metrics["game/badges_max"] = int(np.max(badges))
+                    metrics["game/badges_mean"] = float(np.mean(badges))
+                if locations:
+                    metrics["game/locations_mean"] = float(np.mean(locations))
+                if hp:
+                    metrics["game/hp_ratio_mean"] = float(np.mean(hp))
+
+                # Event flag progress (when using EventProgressRewardCalculator)
+                event_flags = [
+                    e.get("event_progress", {}).get("flags_triggered", 0)
+                    for e in episodes
+                    if "event_progress" in e
+                ]
+                if event_flags:
+                    metrics["game/event_flags_max"] = int(np.max(event_flags))
+                    metrics["game/event_flags_mean"] = float(np.mean(event_flags))
+
+                # Best-model tracking
+                if rewards:
+                    recent_mean = float(np.mean(rewards[-10:]))
+                    if recent_mean > self.best_reward:
+                        self.best_reward = recent_mean
+                        best_path = os.path.join(
+                            self.save_path_models, "best_model"
+                        )
+                        self.model.save(best_path)
+                        if self.verbose >= 1:
+                            logger.info(
+                                f"W&B: new best model "
+                                f"(reward={recent_mean:.2f})"
+                            )
+                    metrics["episode/best_reward"] = self.best_reward
+
+            except (TypeError, KeyError, IndexError) as exc:
+                if self.verbose >= 2:
+                    logger.warning(f"WandbCallback ep_info parse error: {exc}")
+
+        # ── Log to W&B ───────────────────────────────────────────────
+        self._wandb.log(metrics, step=self.num_timesteps)
+
+        # ── Periodic checkpoint + artifact ───────────────────────────
+        if self.num_timesteps % self.save_freq == 0:
+            ckpt_name = f"model_{self.num_timesteps}"
+            ckpt_path = os.path.join(self.save_path_models, ckpt_name)
+            self.model.save(ckpt_path)
+
+            try:
+                artifact = self._wandb.Artifact(
+                    name=f"model-step-{self.num_timesteps}",
+                    type="model",
+                    description=f"Checkpoint at step {self.num_timesteps}",
+                )
+                artifact.add_file(ckpt_path + ".zip")
+                self._wandb.log_artifact(artifact)
+                if self.verbose >= 1:
+                    logger.info(
+                        f"W&B: checkpoint artifact uploaded "
+                        f"(step {self.num_timesteps})"
+                    )
+            except Exception as exc:
+                logger.warning(f"W&B artifact upload failed: {exc}")

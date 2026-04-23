@@ -125,9 +125,10 @@ def main(ctx):
 @save_dir_option
 @verbose_option
 @click.option('--timesteps', '-t', default=500000, help='Training timesteps (IMPROVED: 5x increase)', type=int)
-@click.option('--algorithm', '-a', default='PPO', help='RL algorithm', type=click.Choice(['PPO', 'A2C', 'DQN']))
-@click.option('--reward-strategy', default='exploration', help='Reward strategy (IMPROVED: exploration focus)',
-              type=click.Choice(['standard', 'exploration', 'progress', 'sparse']))
+@click.option('--algorithm', '-a', default='RecurrentPPO', help='RL algorithm',
+              type=click.Choice(['PPO', 'RecurrentPPO', 'A2C', 'DQN']))
+@click.option('--reward-strategy', default='events', help='Reward strategy (events = event-flag milestones)',
+              type=click.Choice(['standard', 'exploration', 'progress', 'sparse', 'events']))
 @click.option('--observation-type', default='multi_modal', help='Observation type',
               type=click.Choice(['multi_modal', 'screen_only', 'minimal']))
 @click.option('--show-game/--no-show-game', default=False, help='Show game window during training')
@@ -138,9 +139,14 @@ def main(ctx):
 @click.option('--save-freq', default=25000, type=int, help='Model save frequency (IMPROVED: more frequent)')
 @click.option('--max-episode-steps', default=15000, type=int, help='Maximum steps per episode (IMPROVED: 3x longer)')
 @click.option('--clean-start/--no-clean-start', default=True, help='Clean ROM save files before training')
+@click.option('--save-state', type=click.Path(exists=True), default=None,
+              help='PyBoy .state file for fast episode resets')
+@click.option('--wandb-project', default='pokemon-red-ai', help='W&B project name')
+@click.option('--no-wandb', is_flag=True, help='Disable Weights & Biases logging')
+@click.option('--seed', type=int, default=None, help='Random seed for reproducibility')
 def train(rom_path, config_path, save_dir, verbose, timesteps, algorithm, reward_strategy,
           observation_type, show_game, show_plots, monitor_mode, learning_rate, batch_size,
-          save_freq, max_episode_steps, clean_start):
+          save_freq, max_episode_steps, clean_start, save_state, wandb_project, no_wandb, seed):
     """🚀 Train a Pokemon Red RL game with improved exploration-focused settings."""
     setup_logging(verbose)
 
