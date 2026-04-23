@@ -1,9 +1,10 @@
+#!/usr/bin/env python3
 """
-Fixed evaluation harness for the Pokémon Red AI paper experiments.
+Fixed evaluation harness for the Pokemon Red AI paper experiments.
 
 Runs a locked, deterministic evaluation protocol on a trained checkpoint:
 
-- N evaluation episodes (default 20, matches analysis_plan.md §3)
+- N evaluation episodes (default 20, matches analysis_plan.md S3)
 - Fixed starting save state (default s0_post_intro.state)
 - Deterministic policy (argmax action)
 - Exploration bonuses disabled at eval time
@@ -20,24 +21,54 @@ Locked fields:
 Changing any locked field after main experiments begin is a deviation from the
 pre-registered plan and must be logged in ``paper/compute_ledger.md``.
 
-Usage:
-    python -m scripts.eval \\
+Usage::
+
+    # Evaluate a RecurrentPPO checkpoint
+    python scripts/eval.py \\
         --checkpoint training_output/models/best_model.zip \\
+        --rom PokemonRed.gb
+
+    # Evaluate with custom save state and output file
+    python scripts/eval.py \\
+        --checkpoint training_output/models/best_model.zip \\
+        --rom PokemonRed.gb \\
         --save-state save_states/s0_post_intro.state \\
-        --output paper/notebooks/eval_results/symbolic_seed0.json
+        --output paper/notebooks/eval_results/hybrid_seed42.json
+
+    # Quick smoke test (override locked episode count)
+    python scripts/eval.py \\
+        --checkpoint model.zip --rom PokemonRed.gb \\
+        --n-episodes 3 --allow-override
 """
 
 import argparse
 import json
 import logging
+import subprocess
+import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+
+# Add project root to path
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from pokemon_red_ai.environment import PokemonRedGymEnv
+from pokemon_red_ai.game.memory import MAP_IDS, BADGE_FLAGS
 
 logger = logging.getLogger(__name__)
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Schema & locked defaults
+# ──────────────────────────────────────────────────────────────────────
+
 # Schema for the JSON blob this script emits. Notebooks in paper/notebooks/
-# assume these exact keys — do not rename without updating downstream consumers.
+# assume these exact keys -- do not rename without updating downstream consumers.
 EVAL_METRIC_SCHEMA: Dict[str, type] = {
     "brock_win_rate": float,              # fraction of episodes that earned Boulder Badge
     "mean_event_flags_triggered": float,  # mean across episodes
@@ -53,74 +84,339 @@ EVAL_METRIC_SCHEMA: Dict[str, type] = {
     "git_sha": str,
 }
 
-
-# Locked defaults per analysis_plan.md §3
+# Locked defaults per analysis_plan.md S3
 LOCKED_N_EPISODES = 20
 LOCKED_SEED = 42
+
+# Game constants for milestone detection
+PEWTER_CITY_MAP_ID = MAP_IDS["pewter_city"]  # 3
+BOULDER_BADGE_BIT = BADGE_FLAGS["boulder"]    # 0x01
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Model loading
+# ──────────────────────────────────────────────────────────────────────
+
+
+def load_model(checkpoint_path: Path, algorithm: str):
+    """
+    Load a trained SB3 model from a checkpoint.
+
+    Args:
+        checkpoint_path: Path to the ``.zip`` checkpoint.
+        algorithm: One of 'PPO' or 'RecurrentPPO'.
+
+    Returns:
+        The loaded model instance.
+    """
+    if algorithm == "RecurrentPPO":
+        from sb3_contrib import RecurrentPPO
+        model = RecurrentPPO.load(str(checkpoint_path))
+    else:
+        from stable_baselines3 import PPO
+        model = PPO.load(str(checkpoint_path))
+
+    logger.info(
+        f"Loaded {algorithm} checkpoint from {checkpoint_path} "
+        f"({sum(p.numel() for p in model.policy.parameters()):,} params)"
+    )
+    return model
+
+
+def detect_algorithm(checkpoint_path: Path) -> str:
+    """
+    Try to detect whether a checkpoint is PPO or RecurrentPPO.
+
+    Attempts RecurrentPPO first (it fails fast on PPO checkpoints).
+    Falls back to PPO.
+    """
+    try:
+        from sb3_contrib import RecurrentPPO
+        RecurrentPPO.load(str(checkpoint_path))
+        return "RecurrentPPO"
+    except Exception:
+        pass
+
+    try:
+        from stable_baselines3 import PPO
+        PPO.load(str(checkpoint_path))
+        return "PPO"
+    except Exception:
+        pass
+
+    raise ValueError(
+        f"Could not load checkpoint as PPO or RecurrentPPO: {checkpoint_path}"
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Single episode rollout
+# ──────────────────────────────────────────────────────────────────────
+
+
+def run_episode(
+    env: PokemonRedGymEnv,
+    model,
+    is_recurrent: bool,
+    deterministic: bool = True,
+    max_steps: int = 15_000,
+) -> Dict[str, Any]:
+    """
+    Run a single evaluation episode and collect metrics.
+
+    Returns a dict with per-episode results including game milestones.
+    """
+    obs, info = env.reset()
+
+    # RecurrentPPO LSTM state tracking
+    lstm_states = None
+    episode_start = True
+
+    total_reward = 0.0
+    steps = 0
+    step_reached_pewter = None
+    step_earned_boulder = None
+    maps_seen = set()
+    max_event_flags = 0
+
+    while steps < max_steps:
+        # Get action from policy
+        if is_recurrent:
+            action, lstm_states = model.predict(
+                obs,
+                state=lstm_states,
+                episode_start=episode_start,
+                deterministic=deterministic,
+            )
+            episode_start = False
+        else:
+            action, _ = model.predict(obs, deterministic=deterministic)
+
+        obs, reward, terminated, truncated, info = env.step(action)
+        total_reward += reward
+        steps += 1
+
+        # Track map visits
+        current_map = info.get("current_map", 0)
+        if current_map != 0:
+            maps_seen.add(current_map)
+
+        # Detect Pewter City arrival
+        if step_reached_pewter is None and current_map == PEWTER_CITY_MAP_ID:
+            step_reached_pewter = steps
+            logger.debug(f"  Reached Pewter City at step {steps}")
+
+        # Detect Boulder Badge
+        badges = info.get("badges_earned", 0)
+        if step_earned_boulder is None and (badges & BOULDER_BADGE_BIT):
+            step_earned_boulder = steps
+            logger.debug(f"  Earned Boulder Badge at step {steps}")
+
+        # Track event flags
+        event_progress = info.get("event_progress", {})
+        flags_triggered = event_progress.get("flags_triggered", 0)
+        max_event_flags = max(max_event_flags, flags_triggered)
+
+        if terminated or truncated:
+            break
+
+    return {
+        "total_reward": total_reward,
+        "steps": steps,
+        "maps_visited": len(maps_seen),
+        "maps_list": sorted(maps_seen),
+        "event_flags_triggered": max_event_flags,
+        "badges": info.get("badges_earned", 0),
+        "earned_boulder_badge": step_earned_boulder is not None,
+        "step_reached_pewter": step_reached_pewter,
+        "step_earned_boulder": step_earned_boulder,
+        "final_map": info.get("current_map", 0),
+        "player_level": info.get("player_level", 0),
+        "terminated": terminated,
+        "truncated": truncated,
+    }
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Main evaluation function
+# ──────────────────────────────────────────────────────────────────────
 
 
 def evaluate_checkpoint(
     checkpoint_path: Path,
+    rom_path: Path,
     save_state: Path,
+    algorithm: str = "auto",
     n_episodes: int = LOCKED_N_EPISODES,
     deterministic: bool = True,
     seed: int = LOCKED_SEED,
+    max_episode_steps: int = 15_000,
+    observation_type: str = "multi_modal",
+    allow_override: bool = False,
 ) -> Dict[str, Any]:
     """
     Run the fixed evaluation protocol on a trained checkpoint.
 
-    This function is intentionally a skeleton in PR #0. The real implementation
-    follows in PR #2, once these dependencies from PR #1 land:
-      - Save state loading in PokemonRedGymEnv.reset(save_state=...)
-      - Event flag reading in pokemon_red_ai/game/memory.py
-      - RecurrentPPO checkpoint support in training/models.py
-
     Args:
         checkpoint_path: Path to a stable-baselines3 ``.zip`` checkpoint.
-        save_state: Path to a PyBoy ``.state`` file. The eval env is reset to
-            this state before every episode.
+        rom_path: Path to the Pokemon Red ROM file.
+        save_state: Path to a PyBoy ``.state`` file. The eval env is reset
+            to this state before every episode.
+        algorithm: 'PPO', 'RecurrentPPO', or 'auto' (detect from checkpoint).
         n_episodes: Number of evaluation episodes. Locked at 20 for the paper.
-        deterministic: Whether to use argmax actions. Locked True for the paper.
+        deterministic: Whether to use argmax actions.
         seed: Evaluation seed. Locked at 42 for the paper.
+        max_episode_steps: Maximum steps per episode before truncation.
+        observation_type: Observation representation to use.
+        allow_override: If True, suppresses ValueError on non-locked params.
 
     Returns:
         A dict matching ``EVAL_METRIC_SCHEMA``.
-
-    Raises:
-        NotImplementedError: Until PR #2 lands.
-        ValueError: If ``n_episodes`` or ``seed`` deviate from locked values
-            without an explicit override flag.
     """
-    if n_episodes != LOCKED_N_EPISODES:
-        raise ValueError(
-            f"n_episodes={n_episodes} deviates from the pre-registered "
-            f"n_episodes={LOCKED_N_EPISODES}. Log the deviation in "
-            f"paper/compute_ledger.md before re-running with a different value."
-        )
-    if seed != LOCKED_SEED:
-        raise ValueError(
-            f"seed={seed} deviates from the pre-registered seed={LOCKED_SEED}. "
-            f"Log the deviation in paper/compute_ledger.md before re-running "
-            f"with a different seed."
-        )
+    # Enforce locked values unless explicitly overridden
+    if not allow_override:
+        if n_episodes != LOCKED_N_EPISODES:
+            raise ValueError(
+                f"n_episodes={n_episodes} deviates from the pre-registered "
+                f"n_episodes={LOCKED_N_EPISODES}. Pass --allow-override or "
+                f"log the deviation in paper/compute_ledger.md."
+            )
+        if seed != LOCKED_SEED:
+            raise ValueError(
+                f"seed={seed} deviates from the pre-registered seed={LOCKED_SEED}. "
+                f"Pass --allow-override or log the deviation in "
+                f"paper/compute_ledger.md."
+            )
 
-    # TODO(PR #2): Implement once PR #1 lands save state loading and event flag reads.
-    #   1. Construct a single PokemonRedGymEnv with reward=events, eval_mode=True
-    #   2. Load the RecurrentPPO checkpoint
-    #   3. Run n_episodes rollouts, reset from save_state each time
-    #   4. Collect per-episode: event flags triggered, maps visited, return,
-    #      steps-to-Pewter, steps-to-Brock-win
-    #   5. Aggregate into EVAL_METRIC_SCHEMA dict
-    raise NotImplementedError(
-        "eval.py is a skeleton in PR #0. Real implementation follows in PR #2 "
-        "once save state loading and event flag reading land."
+    # Validate inputs
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+    if not rom_path.exists():
+        raise FileNotFoundError(f"ROM not found: {rom_path}")
+    if not save_state.exists():
+        raise FileNotFoundError(f"Save state not found: {save_state}")
+
+    # Auto-detect algorithm if needed
+    if algorithm == "auto":
+        logger.info("Auto-detecting algorithm from checkpoint...")
+        algorithm = detect_algorithm(checkpoint_path)
+        logger.info(f"Detected: {algorithm}")
+
+    is_recurrent = algorithm == "RecurrentPPO"
+
+    # Load model
+    model = load_model(checkpoint_path, algorithm)
+
+    # Create environment
+    logger.info("Creating evaluation environment...")
+    env = PokemonRedGymEnv(
+        rom_path=str(rom_path),
+        headless=True,
+        max_episode_steps=max_episode_steps,
+        reward_strategy="events",
+        observation_type=observation_type,
+        save_state_path=str(save_state),
     )
+
+    # Set seed for reproducibility
+    np.random.seed(seed)
+
+    # Run episodes
+    logger.info("=" * 60)
+    logger.info(f"EVALUATION: {n_episodes} episodes, seed={seed}")
+    logger.info(f"  Checkpoint: {checkpoint_path}")
+    logger.info(f"  Algorithm:  {algorithm}")
+    logger.info(f"  Save state: {save_state}")
+    logger.info(f"  Max steps:  {max_episode_steps}")
+    logger.info("=" * 60)
+
+    episode_results: List[Dict[str, Any]] = []
+    start_time = time.time()
+
+    try:
+        for i in range(n_episodes):
+            logger.info(f"Episode {i + 1}/{n_episodes}...")
+            result = run_episode(
+                env, model, is_recurrent,
+                deterministic=deterministic,
+                max_steps=max_episode_steps,
+            )
+            episode_results.append(result)
+
+            logger.info(
+                f"  reward={result['total_reward']:.1f}  "
+                f"steps={result['steps']}  "
+                f"maps={result['maps_visited']}  "
+                f"flags={result['event_flags_triggered']}  "
+                f"badges={result['badges']}  "
+                f"level={result['player_level']}"
+            )
+    finally:
+        env.close()
+
+    elapsed = time.time() - start_time
+    logger.info(f"Evaluation complete in {elapsed:.1f}s")
+
+    # ── Aggregate metrics ───────────────────────────────────────────
+    returns = [r["total_reward"] for r in episode_results]
+    flags = [r["event_flags_triggered"] for r in episode_results]
+    maps = [r["maps_visited"] for r in episode_results]
+    brock_wins = [r["earned_boulder_badge"] for r in episode_results]
+    pewter_steps = [r["step_reached_pewter"] for r in episode_results
+                    if r["step_reached_pewter"] is not None]
+    brock_steps = [r["step_earned_boulder"] for r in episode_results
+                   if r["step_earned_boulder"] is not None]
+
+    metrics: Dict[str, Any] = {
+        "mean_return": float(np.mean(returns)),
+        "return_std": float(np.std(returns)),
+        "brock_win_rate": float(np.mean(brock_wins)),
+        "mean_event_flags_triggered": float(np.mean(flags)),
+        "max_event_flags_triggered": int(np.max(flags)) if flags else 0,
+        "unique_maps_visited": int(np.max(maps)) if maps else 0,
+        "steps_to_pewter": (
+            int(np.mean(pewter_steps)) if pewter_steps else None
+        ),
+        "steps_to_brock_win": (
+            int(np.mean(brock_steps)) if brock_steps else None
+        ),
+        "n_episodes": n_episodes,
+        "eval_save_state": str(save_state),
+        "checkpoint_path": str(checkpoint_path),
+        "git_sha": _git_sha(),
+        # Extended metrics (not in schema, but useful)
+        "algorithm": algorithm,
+        "observation_type": observation_type,
+        "seed": seed,
+        "max_episode_steps": max_episode_steps,
+        "wall_clock_seconds": round(elapsed, 1),
+        "episode_details": episode_results,
+    }
+
+    # Log summary
+    logger.info("=" * 60)
+    logger.info("EVALUATION RESULTS")
+    logger.info("=" * 60)
+    logger.info(f"  Mean return:       {metrics['mean_return']:.2f} +/- {metrics['return_std']:.2f}")
+    logger.info(f"  Brock win rate:    {metrics['brock_win_rate']:.1%}")
+    logger.info(f"  Event flags (mean): {metrics['mean_event_flags_triggered']:.1f}")
+    logger.info(f"  Event flags (max):  {metrics['max_event_flags_triggered']}")
+    logger.info(f"  Maps visited (max): {metrics['unique_maps_visited']}")
+    if metrics["steps_to_pewter"] is not None:
+        logger.info(f"  Steps to Pewter:   {metrics['steps_to_pewter']}")
+    if metrics["steps_to_brock_win"] is not None:
+        logger.info(f"  Steps to Brock:    {metrics['steps_to_brock_win']}")
+
+    return metrics
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Utilities
+# ──────────────────────────────────────────────────────────────────────
 
 
 def _git_sha() -> str:
     """Return the current git SHA, or 'unknown' if not in a repo."""
-    import subprocess
-
     try:
         return subprocess.check_output(
             ["git", "rev-parse", "HEAD"],
@@ -131,70 +427,105 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Fixed evaluation harness for Pokémon Red AI paper runs."
+# ──────────────────────────────────────────────────────────────────────
+# CLI
+# ──────────────────────────────────────────────────────────────────────
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description="Fixed evaluation harness for Pokemon Red AI paper runs.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        "--checkpoint",
-        type=Path,
-        required=True,
+
+    p.add_argument(
+        "--checkpoint", type=Path, required=True,
         help="Path to a stable-baselines3 .zip checkpoint.",
     )
-    parser.add_argument(
-        "--save-state",
-        type=Path,
+    p.add_argument(
+        "--rom", type=Path, required=True,
+        help="Path to Pokemon Red ROM (.gb) file.",
+    )
+    p.add_argument(
+        "--save-state", type=Path,
         default=Path("save_states/s0_post_intro.state"),
         help="PyBoy .state file to reset the eval env to before each episode.",
     )
-    parser.add_argument(
-        "--n-episodes",
-        type=int,
-        default=LOCKED_N_EPISODES,
+    p.add_argument(
+        "--algorithm", type=str, default="auto",
+        choices=["auto", "PPO", "RecurrentPPO"],
+        help="RL algorithm. 'auto' detects from checkpoint.",
+    )
+    p.add_argument(
+        "--observation-type", type=str, default="multi_modal",
+        choices=["multi_modal", "screen_only", "minimal"],
+        help="Observation representation.",
+    )
+    p.add_argument(
+        "--n-episodes", type=int, default=LOCKED_N_EPISODES,
         help=f"Number of eval episodes (locked at {LOCKED_N_EPISODES} for the paper).",
     )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=LOCKED_SEED,
+    p.add_argument(
+        "--seed", type=int, default=LOCKED_SEED,
         help=f"Eval seed (locked at {LOCKED_SEED} for the paper).",
     )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=None,
+    p.add_argument(
+        "--max-episode-steps", type=int, default=15_000,
+        help="Maximum steps per episode before truncation.",
+    )
+    p.add_argument(
+        "--allow-override", action="store_true",
+        help="Allow deviating from locked n_episodes/seed values.",
+    )
+    p.add_argument(
+        "--output", type=Path, default=None,
         help="Optional JSON file to write metrics to. If omitted, prints to stdout.",
     )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Verbose logging.",
+    p.add_argument(
+        "-v", "--verbose", action="count", default=0,
+        help="Increase verbosity (-v INFO, -vv DEBUG).",
     )
+
+    return p
+
+
+def main() -> int:
+    parser = build_parser()
     args = parser.parse_args()
 
+    level = {0: logging.WARNING, 1: logging.INFO}.get(args.verbose, logging.DEBUG)
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        level=level,
+        format="[%(asctime)s] %(name)s %(levelname)s - %(message)s",
+        datefmt="%H:%M:%S",
     )
 
-    metrics = evaluate_checkpoint(
-        checkpoint_path=args.checkpoint,
-        save_state=args.save_state,
-        n_episodes=args.n_episodes,
-        seed=args.seed,
-    )
-    metrics["git_sha"] = _git_sha()
-    metrics["checkpoint_path"] = str(args.checkpoint)
-    metrics["eval_save_state"] = str(args.save_state)
+    try:
+        metrics = evaluate_checkpoint(
+            checkpoint_path=args.checkpoint,
+            rom_path=args.rom,
+            save_state=args.save_state,
+            algorithm=args.algorithm,
+            n_episodes=args.n_episodes,
+            seed=args.seed,
+            max_episode_steps=args.max_episode_steps,
+            observation_type=args.observation_type,
+            allow_override=args.allow_override,
+        )
+    except (ValueError, FileNotFoundError) as e:
+        logger.error(str(e))
+        return 1
 
+    # Write output
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(metrics, indent=2, default=str))
-        logger.info("Wrote metrics to %s", args.output)
+        logger.info(f"Wrote metrics to {args.output}")
     else:
         print(json.dumps(metrics, indent=2, default=str))
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
