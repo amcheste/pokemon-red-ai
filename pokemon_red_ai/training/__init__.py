@@ -13,7 +13,8 @@ from .callbacks import (
     TrainingCallback,
     EnhancedTrainingCallback,
     EarlyStopping,
-    PerformanceMonitor
+    PerformanceMonitor,
+    WandbCallback,
 )
 
 # Model creation utilities
@@ -38,6 +39,7 @@ __all__ = [
     "EnhancedTrainingCallback",
     "EarlyStopping",
     "PerformanceMonitor",
+    "WandbCallback",
 
     # Model creation
     "create_ppo_model",
