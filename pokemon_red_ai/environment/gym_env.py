@@ -42,7 +42,8 @@ class PokemonRedGymEnv(gym.Env):
                  reward_strategy: str = "exploration",
                  reward_config: Optional[RewardConfig] = None,
                  screen_size: Tuple[int, int] = (80, 72),
-                 observation_type: str = "multi_modal"):
+                 observation_type: str = "multi_modal",
+                 save_state_path: Optional[str] = None):
         """
         Initialize Pokemon Red Gymnasium environment.
 
@@ -54,6 +55,9 @@ class PokemonRedGymEnv(gym.Env):
             reward_config: Custom reward configuration
             screen_size: Target screen size (width, height)
             observation_type: Type of observation ('multi_modal', 'minimal', 'screen_only')
+            save_state_path: Optional path to a PyBoy ``.state`` file.
+                If provided, ``reset()`` loads this state instead of
+                replaying the intro sequence (much faster).
         """
         super().__init__()
 
@@ -62,6 +66,7 @@ class PokemonRedGymEnv(gym.Env):
         self.max_episode_steps = max_episode_steps
         self.screen_size = screen_size
         self.observation_type = observation_type
+        self.save_state_path = save_state_path
 
         # Initialize game game
         self.game = PokemonRedAgent(
@@ -93,9 +98,10 @@ class PokemonRedGymEnv(gym.Env):
             config=reward_config
         )
 
-        # Define action space (8 Game Boy buttons)
-        self.action_space = gym.spaces.Discrete(8)
-        self.action_names = ['A', 'B', 'SELECT', 'START', 'RIGHT', 'LEFT', 'UP', 'DOWN']
+        # Define action space (7 useful Game Boy buttons — SELECT removed
+        # per analysis_plan.md §5.2; it has no effect in Pokemon Red)
+        self.action_space = gym.spaces.Discrete(7)
+        self.action_names = ['A', 'B', 'START', 'RIGHT', 'LEFT', 'UP', 'DOWN']
 
         # Define observation space based on type
         if observation_type == "multi_modal":
@@ -261,8 +267,15 @@ class PokemonRedGymEnv(gym.Env):
 
             # Performance metrics
             'total_episodes': self.total_episodes,
-            'successful_resets': self.successful_resets
+            'successful_resets': self.successful_resets,
+
+            # Event flag progress (when using EventProgressRewardCalculator)
+            'battle_state': game_state.get('battle_state', 0),
         }
+
+        # Add event flag progress if the reward calculator supports it
+        if hasattr(self.reward_calculator, 'get_event_progress'):
+            info['event_progress'] = self.reward_calculator.get_event_progress()
 
         return info
 
@@ -339,10 +352,27 @@ class PokemonRedGymEnv(gym.Env):
         # Reset reward calculator
         self.reward_calculator.reset()
 
-        # Reset game using the proven working method
+        # Determine save state: options override, then instance default
+        save_state = None
+        if options and 'save_state' in options:
+            save_state = options['save_state']
+        elif self.save_state_path:
+            save_state = self.save_state_path
+
+        # Reset game — use save state when available (much faster than
+        # replaying the intro sequence every episode)
         logger.info("Starting game reset...")
         try:
-            success = self.game.reset_game()
+            if save_state:
+                success = self.game.load_save_state(save_state)
+                if success:
+                    self.successful_resets += 1
+                    logger.info(f"Loaded save state: {save_state}")
+                else:
+                    logger.warning("Save state load failed, falling back to full reset")
+                    success = self.game.reset_game()
+            else:
+                success = self.game.reset_game()
             if success:
                 self.successful_resets += 1
                 logger.info("Game reset successful!")
@@ -350,7 +380,6 @@ class PokemonRedGymEnv(gym.Env):
                 logger.warning("Game reset may have failed - continuing anyway")
         except Exception as e:
             logger.error(f"Game reset failed: {e}")
-            # Try to continue anyway
             success = False
 
         # Wait for game to stabilize

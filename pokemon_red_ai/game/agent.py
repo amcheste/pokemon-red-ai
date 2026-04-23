@@ -426,6 +426,69 @@ class PokemonRedAgent:
             logger.error(f"Failed to load state: {e}")
             return False
 
+    def load_save_state(self, path: str) -> bool:
+        """
+        Load game state from a ``.state`` file path.
+
+        Unlike ``load_state()`` which uses numbered slots and requires
+        ``enable_save_states=True``, this method loads from an arbitrary
+        file path and always works.  Used by the gym environment's
+        ``reset()`` for curriculum learning and fast episode resets.
+
+        Args:
+            path: Path to a PyBoy ``.state`` file.
+
+        Returns:
+            True if successful.
+        """
+        try:
+            with open(path, "rb") as f:
+                self.pyboy.load_state(f)
+
+            # Update memory/screen references (should still be valid
+            # but reassign for safety after state load)
+            self.memory = self.pyboy.memory
+            self.screen = self.pyboy.screen
+
+            # Reset RL tracking for new episode
+            self.visited_locations.clear()
+            self.previous_stats.clear()
+            self.episode_steps = 0
+            self.is_initialized = True
+
+            logger.info(f"Save state loaded from {path}")
+            return True
+        except FileNotFoundError:
+            logger.error(f"Save state file not found: {path}")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to load save state: {e}")
+            return False
+
+    def save_save_state(self, path: str) -> bool:
+        """
+        Save current game state to a ``.state`` file path.
+
+        Companion to ``load_save_state()``.  Useful for creating
+        curriculum save states (post-intro, post-starter, etc.).
+
+        Args:
+            path: Path to write the ``.state`` file.
+
+        Returns:
+            True if successful.
+        """
+        try:
+            from pathlib import Path
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "wb") as f:
+                self.pyboy.save_state(f)
+            logger.info(f"Save state written to {path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save state: {e}")
+            return False
+
     def step(self, action: str) -> Dict[str, Any]:
         """
         Execute one game step with the given action.
