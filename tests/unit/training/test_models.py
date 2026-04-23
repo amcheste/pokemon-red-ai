@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 from pokemon_red_ai.training.models import (
     get_model_config,
     create_ppo_model,
+    create_recurrent_ppo_model,
     create_a2c_model,
     create_dqn_model,
     create_model,
@@ -39,6 +40,16 @@ class TestModelConfig:
 
         assert 'learning_rate' in config
         assert 'n_steps' in config
+        assert config['device'] == 'auto'
+
+    def test_get_model_config_recurrent_ppo(self):
+        """Test getting RecurrentPPO model config."""
+        config = get_model_config('RecurrentPPO')
+
+        assert 'learning_rate' in config
+        assert 'n_steps' in config
+        assert 'batch_size' in config
+        assert 'n_epochs' in config
         assert config['device'] == 'auto'
 
     def test_get_model_config_dqn(self):
@@ -120,6 +131,105 @@ class TestPPOModelCreation:
         assert 'policy_kwargs' in call_kwargs
 
 
+class TestRecurrentPPOModelCreation:
+    """Test RecurrentPPO model creation."""
+
+    @patch('pokemon_red_ai.training.models.RecurrentPPO')
+    def test_create_recurrent_ppo_model(self, mock_rppo, mock_env):
+        """Test RecurrentPPO model creation with defaults."""
+        mock_model = Mock()
+        mock_rppo.return_value = mock_model
+
+        model = create_recurrent_ppo_model(mock_env, tensorboard_log="./logs")
+
+        assert model == mock_model
+        mock_rppo.assert_called_once()
+        # Should use MultiInputLstmPolicy
+        assert mock_rppo.call_args[0][0] == "MultiInputLstmPolicy"
+
+    @patch('pokemon_red_ai.training.models.RecurrentPPO')
+    def test_create_recurrent_ppo_uses_lstm_policy(self, mock_rppo, mock_env):
+        """Test RecurrentPPO uses MultiInputLstmPolicy for Dict obs."""
+        mock_rppo.return_value = Mock()
+
+        create_recurrent_ppo_model(mock_env)
+
+        policy_name = mock_rppo.call_args[0][0]
+        assert policy_name == "MultiInputLstmPolicy"
+
+    @patch('pokemon_red_ai.training.models.RecurrentPPO')
+    def test_create_recurrent_ppo_lstm_params(self, mock_rppo, mock_env):
+        """Test LSTM parameters are passed to policy kwargs."""
+        mock_rppo.return_value = Mock()
+
+        create_recurrent_ppo_model(
+            mock_env,
+            n_lstm_layers=2,
+            lstm_hidden_size=512,
+        )
+
+        call_kwargs = mock_rppo.call_args[1]
+        policy_kwargs = call_kwargs['policy_kwargs']
+        assert policy_kwargs['n_lstm_layers'] == 2
+        assert policy_kwargs['lstm_hidden_size'] == 512
+
+    @patch('pokemon_red_ai.training.models.RecurrentPPO')
+    def test_create_recurrent_ppo_default_lstm_params(self, mock_rppo, mock_env):
+        """Test RecurrentPPO default LSTM parameters."""
+        mock_rppo.return_value = Mock()
+
+        create_recurrent_ppo_model(mock_env)
+
+        call_kwargs = mock_rppo.call_args[1]
+        policy_kwargs = call_kwargs['policy_kwargs']
+        assert policy_kwargs['n_lstm_layers'] == 1
+        assert policy_kwargs['lstm_hidden_size'] == 256
+
+    @patch('pokemon_red_ai.training.models.RecurrentPPO')
+    def test_create_recurrent_ppo_with_custom_params(self, mock_rppo, mock_env):
+        """Test RecurrentPPO creation with custom hyperparameters."""
+        mock_rppo.return_value = Mock()
+
+        create_recurrent_ppo_model(
+            mock_env,
+            learning_rate=0.0001,
+            batch_size=128,
+        )
+
+        call_kwargs = mock_rppo.call_args[1]
+        assert call_kwargs['learning_rate'] == 0.0001
+        assert call_kwargs['batch_size'] == 128
+
+    @patch('pokemon_red_ai.training.models.RecurrentPPO')
+    def test_create_recurrent_ppo_with_policy_kwargs(self, mock_rppo, mock_env):
+        """Test RecurrentPPO creation with custom policy kwargs."""
+        mock_rppo.return_value = Mock()
+
+        custom_policy_kwargs = {
+            'net_arch': dict(pi=[128, 64], vf=[128, 64])
+        }
+
+        create_recurrent_ppo_model(mock_env, policy_kwargs=custom_policy_kwargs)
+
+        call_kwargs = mock_rppo.call_args[1]
+        policy_kwargs = call_kwargs['policy_kwargs']
+        # Custom arch should override default
+        assert policy_kwargs['net_arch'] == dict(pi=[128, 64], vf=[128, 64])
+        # But LSTM params should still be present
+        assert 'n_lstm_layers' in policy_kwargs
+
+    @patch('pokemon_red_ai.training.models.RecurrentPPO')
+    def test_create_recurrent_ppo_uses_features_extractor(self, mock_rppo, mock_env):
+        """Test RecurrentPPO uses PokemonFeaturesExtractor."""
+        mock_rppo.return_value = Mock()
+
+        create_recurrent_ppo_model(mock_env)
+
+        call_kwargs = mock_rppo.call_args[1]
+        policy_kwargs = call_kwargs['policy_kwargs']
+        assert policy_kwargs['features_extractor_class'] is PokemonFeaturesExtractor
+
+
 class TestA2CModelCreation:
     """Test A2C model creation."""
 
@@ -187,6 +297,16 @@ class TestModelFactory:
         mock_ppo.return_value = mock_model
 
         model = create_model('PPO', mock_env)
+
+        assert model == mock_model
+
+    @patch('pokemon_red_ai.training.models.RecurrentPPO')
+    def test_create_model_recurrent_ppo(self, mock_rppo, mock_env):
+        """Test create_model factory with RecurrentPPO."""
+        mock_model = Mock()
+        mock_rppo.return_value = mock_model
+
+        model = create_model('RecurrentPPO', mock_env)
 
         assert model == mock_model
 
@@ -320,7 +440,7 @@ class TestPokemonFeaturesExtractor:
 class TestParameterized:
     """Parameterized tests for models."""
 
-    @pytest.mark.parametrize("algorithm", ["PPO", "A2C"])
+    @pytest.mark.parametrize("algorithm", ["PPO", "RecurrentPPO", "A2C"])
     def test_model_creation_algorithms(self, mock_env, algorithm):
         """Test model creation with different algorithms."""
         with patch(f'pokemon_red_ai.training.models.{algorithm}') as MockAlgo:
@@ -419,6 +539,27 @@ class TestModelConfiguration:
         for param in required_params:
             assert param in config
 
+    def test_recurrent_ppo_config_completeness(self):
+        """Test RecurrentPPO config has all necessary parameters."""
+        config = get_model_config('RecurrentPPO')
+
+        required_params = [
+            'learning_rate', 'n_steps', 'batch_size', 'n_epochs',
+            'gamma', 'gae_lambda', 'clip_range', 'ent_coef',
+            'vf_coef', 'max_grad_norm', 'device'
+        ]
+
+        for param in required_params:
+            assert param in config
+
+    def test_recurrent_ppo_config_differs_from_ppo(self):
+        """Test RecurrentPPO has a lower default learning rate than PPO."""
+        ppo_config = get_model_config('PPO')
+        rppo_config = get_model_config('RecurrentPPO')
+
+        # RecurrentPPO should have its own (slightly lower) LR
+        assert rppo_config['learning_rate'] <= ppo_config['learning_rate']
+
     def test_a2c_config_completeness(self):
         """Test A2C config has all necessary parameters."""
         config = get_model_config('A2C')
@@ -500,7 +641,7 @@ class TestModelHyperparameters:
 
     def test_learning_rate_reasonable(self):
         """Test learning rates are in reasonable range."""
-        for algo in ['PPO', 'A2C', 'DQN']:
+        for algo in ['PPO', 'RecurrentPPO', 'A2C', 'DQN']:
             config = get_model_config(algo)
             lr = config['learning_rate']
 
@@ -509,7 +650,7 @@ class TestModelHyperparameters:
 
     def test_gamma_in_valid_range(self):
         """Test discount factor is valid."""
-        for algo in ['PPO', 'A2C', 'DQN']:
+        for algo in ['PPO', 'RecurrentPPO', 'A2C', 'DQN']:
             config = get_model_config(algo)
             gamma = config['gamma']
 
@@ -518,14 +659,14 @@ class TestModelHyperparameters:
 
     def test_batch_size_positive(self):
         """Test batch sizes are positive."""
-        for algo in ['PPO', 'A2C', 'DQN']:
+        for algo in ['PPO', 'RecurrentPPO', 'A2C', 'DQN']:
             config = get_model_config(algo)
             if 'batch_size' in config:
                 assert config['batch_size'] > 0
 
     def test_entropy_coefficient_range(self):
         """Test entropy coefficient is reasonable."""
-        for algo in ['PPO', 'A2C']:
+        for algo in ['PPO', 'RecurrentPPO', 'A2C']:
             config = get_model_config(algo)
             ent_coef = config['ent_coef']
 

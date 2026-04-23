@@ -26,7 +26,7 @@ def mock_env():
 
     # Mock action space
     env.action_space = Mock()
-    env.action_space.n = 8
+    env.action_space.n = 7
 
     # Mock methods
     env.reset = Mock(return_value=(Mock(), {}))

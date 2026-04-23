@@ -3,14 +3,19 @@ Model creation and configuration utilities for Pokemon Red RL.
 
 This module provides utilities for creating and configuring RL models
 with appropriate hyperparameters for Pokemon Red training.
+
+Supported algorithms:
+  - PPO, A2C, DQN  (stable-baselines3)
+  - RecurrentPPO    (sb3-contrib — PPO with LSTM for partial observability)
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 import gymnasium as gym
 from stable_baselines3 import PPO, A2C, DQN
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from sb3_contrib import RecurrentPPO
 import torch
 import torch.nn as nn
 
@@ -22,7 +27,7 @@ def get_model_config(algorithm: str = 'PPO') -> Dict[str, Any]:
     Get default hyperparameters for different RL algorithms optimized for Pokemon Red.
 
     Args:
-        algorithm: RL algorithm name ('PPO', 'A2C', 'DQN')
+        algorithm: RL algorithm name ('PPO', 'A2C', 'DQN', 'RecurrentPPO')
 
     Returns:
         Dictionary of hyperparameters
@@ -30,6 +35,20 @@ def get_model_config(algorithm: str = 'PPO') -> Dict[str, Any]:
     configs = {
         'PPO': {
             'learning_rate': 3e-4,
+            'n_steps': 2048,
+            'batch_size': 64,
+            'n_epochs': 10,
+            'gamma': 0.99,
+            'gae_lambda': 0.95,
+            'clip_range': 0.2,
+            'ent_coef': 0.01,
+            'vf_coef': 0.5,
+            'max_grad_norm': 0.5,
+            'verbose': 1,
+            'device': 'auto'
+        },
+        'RecurrentPPO': {
+            'learning_rate': 2.5e-4,
             'n_steps': 2048,
             'batch_size': 64,
             'n_epochs': 10,
@@ -120,6 +139,72 @@ def create_ppo_model(env: gym.Env,
     logger.info("PPO model created successfully")
     logger.info(f"  Learning rate: {config['learning_rate']}")
     logger.info(f"  Batch size: {config['batch_size']}")
+    logger.info(f"  Device: {config['device']}")
+
+    return model
+
+
+def create_recurrent_ppo_model(
+    env: gym.Env,
+    tensorboard_log: Optional[str] = None,
+    policy_kwargs: Optional[Dict[str, Any]] = None,
+    n_lstm_layers: int = 1,
+    lstm_hidden_size: int = 256,
+    **kwargs,
+) -> RecurrentPPO:
+    """
+    Create RecurrentPPO (PPO + LSTM) model for Pokemon Red.
+
+    RecurrentPPO adds an LSTM layer between the feature extractor and the
+    policy/value heads, giving the agent short-term memory.  This is
+    critical for Pokemon Red because the agent needs to remember what
+    happened during multi-frame menu navigation, battle sequences, and
+    dialogue — information that a single frame cannot convey.
+
+    Args:
+        env: Training environment (must use a Dict observation space for
+            ``MultiInputLstmPolicy``).
+        tensorboard_log: Path for tensorboard logs.
+        policy_kwargs: Additional policy arguments.  Merged on top of
+            defaults (PokemonFeaturesExtractor + net_arch).
+        n_lstm_layers: Number of stacked LSTM layers (1 is usually enough).
+        lstm_hidden_size: Hidden size of each LSTM layer.
+        **kwargs: Additional RecurrentPPO arguments (overrides defaults
+            from ``get_model_config('RecurrentPPO')``).
+
+    Returns:
+        Configured RecurrentPPO model.
+    """
+    # Get default config
+    config = get_model_config('RecurrentPPO')
+    config.update(kwargs)
+
+    # Build policy kwargs with LSTM parameters
+    default_policy_kwargs: Dict[str, Any] = {
+        'features_extractor_class': PokemonFeaturesExtractor,
+        'features_extractor_kwargs': {'features_dim': 256},
+        'net_arch': dict(pi=[256, 128], vf=[256, 128]),
+        'activation_fn': nn.ReLU,
+        'n_lstm_layers': n_lstm_layers,
+        'lstm_hidden_size': lstm_hidden_size,
+    }
+
+    if policy_kwargs:
+        default_policy_kwargs.update(policy_kwargs)
+
+    model = RecurrentPPO(
+        "MultiInputLstmPolicy",
+        env,
+        policy_kwargs=default_policy_kwargs,
+        tensorboard_log=tensorboard_log,
+        **config,
+    )
+
+    logger.info("RecurrentPPO model created successfully")
+    logger.info(f"  Learning rate: {config['learning_rate']}")
+    logger.info(f"  Batch size: {config['batch_size']}")
+    logger.info(f"  LSTM layers: {n_lstm_layers}")
+    logger.info(f"  LSTM hidden size: {lstm_hidden_size}")
     logger.info(f"  Device: {config['device']}")
 
     return model
@@ -339,12 +424,12 @@ class PokemonFeaturesExtractor(BaseFeaturesExtractor):
 def create_model(algorithm: str,
                  env: gym.Env,
                  tensorboard_log: Optional[str] = None,
-                 **kwargs) -> Any:
+                 **kwargs) -> Union[PPO, RecurrentPPO, A2C, DQN]:
     """
     Factory function to create RL models.
 
     Args:
-        algorithm: Algorithm name ('PPO', 'A2C', 'DQN')
+        algorithm: Algorithm name ('PPO', 'RecurrentPPO', 'A2C', 'DQN')
         env: Training environment
         tensorboard_log: Path for tensorboard logs
         **kwargs: Additional model arguments
@@ -354,6 +439,7 @@ def create_model(algorithm: str,
     """
     creators = {
         'PPO': create_ppo_model,
+        'RecurrentPPO': create_recurrent_ppo_model,
         'A2C': create_a2c_model,
         'DQN': create_dqn_model
     }
