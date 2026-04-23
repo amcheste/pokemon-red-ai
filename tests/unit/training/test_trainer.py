@@ -13,6 +13,7 @@ from datetime import datetime
 
 from pokemon_red_ai.training.trainer import PokemonTrainer
 from pokemon_red_ai.environment import RewardConfig
+from sb3_contrib import RecurrentPPO
 
 
 class TestTrainerInitialization:
@@ -129,6 +130,32 @@ class TestModelCreation:
 
             assert model == mock_model
             mock_create.assert_called_once()
+
+    def test_create_model_recurrent_ppo(self, mock_rom_file, temp_save_dir, mock_env):
+        """Test RecurrentPPO model creation through trainer."""
+        with patch('pokemon_red_ai.training.trainer.create_recurrent_ppo_model') as mock_create:
+            mock_model = Mock()
+            mock_create.return_value = mock_model
+
+            trainer = PokemonTrainer(
+                rom_path=str(mock_rom_file),
+                save_dir=str(temp_save_dir)
+            )
+
+            model = trainer.create_model(mock_env, algorithm='RecurrentPPO')
+
+            assert model == mock_model
+            mock_create.assert_called_once()
+
+    def test_create_model_unsupported_algorithm(self, mock_rom_file, temp_save_dir, mock_env):
+        """Test trainer raises error for unsupported algorithm."""
+        trainer = PokemonTrainer(
+            rom_path=str(mock_rom_file),
+            save_dir=str(temp_save_dir)
+        )
+
+        with pytest.raises(ValueError, match="not supported"):
+            trainer.create_model(mock_env, algorithm='DQN')
 
     def test_create_model_custom_hyperparameters(self, mock_rom_file, temp_save_dir, mock_env):
         """Test model creation with custom hyperparameters."""
@@ -260,6 +287,40 @@ class TestTraining:
             assert call_kwargs['batch_size'] == 128
 
 
+class TestRecurrentPPOTraining:
+    """Test RecurrentPPO training workflow."""
+
+    def test_train_recurrent_ppo(self, mock_rom_file, temp_save_dir):
+        """Test training with RecurrentPPO algorithm."""
+        with patch('pokemon_red_ai.training.trainer.PokemonRedGymEnv') as MockEnv, \
+                patch('pokemon_red_ai.training.trainer.Monitor') as MockMonitor, \
+                patch('pokemon_red_ai.training.trainer.create_recurrent_ppo_model') as MockModel, \
+                patch('pokemon_red_ai.training.trainer.TrainingCallback') as MockCallback:
+            mock_env = Mock()
+            mock_model = Mock()
+            mock_callback = Mock()
+
+            MockEnv.return_value = mock_env
+            MockMonitor.return_value = mock_env
+            MockModel.return_value = mock_model
+            MockCallback.return_value = mock_callback
+
+            trainer = PokemonTrainer(
+                rom_path=str(mock_rom_file),
+                save_dir=str(temp_save_dir)
+            )
+
+            trainer.train(
+                total_timesteps=1000,
+                algorithm='RecurrentPPO',
+                show_plots=False
+            )
+
+            mock_model.learn.assert_called_once()
+            mock_model.save.assert_called()
+            mock_env.close.assert_called()
+
+
 class TestTesting:
     """Test model testing functionality."""
 
@@ -334,6 +395,46 @@ class TestTesting:
 
             # Verify rendering was used
             assert MockEnv.call_args[1]['headless'] is False
+
+
+    def test_test_recurrent_ppo_model(self, mock_rom_file, temp_save_dir):
+        """Test loading and evaluating a RecurrentPPO model."""
+        with patch('pokemon_red_ai.training.trainer.PokemonRedGymEnv') as MockEnv, \
+                patch('pokemon_red_ai.training.trainer.RecurrentPPO') as MockRPPO:
+            mock_env = Mock()
+            mock_model = Mock()
+            # RecurrentPPO.predict returns (action, lstm_states)
+            mock_model.predict = Mock(return_value=(0, ('h', 'c')))
+
+            mock_env.reset = Mock(return_value=(Mock(), {}))
+            mock_env.step = Mock(return_value=(
+                Mock(), 5.0, True, False,
+                {'maps_visited': 2, 'badges_earned': 0, 'locations_visited': 10}
+            ))
+
+            MockEnv.return_value = mock_env
+            MockRPPO.load = Mock(return_value=mock_model)
+
+            trainer = PokemonTrainer(
+                rom_path=str(mock_rom_file),
+                save_dir=str(temp_save_dir)
+            )
+
+            model_path = temp_save_dir / "rppo_model.zip"
+            model_path.touch()
+
+            results = trainer.test(
+                model_path=str(model_path),
+                episodes=1,
+                render=False,
+                algorithm='RecurrentPPO',
+            )
+
+            assert results['episodes_tested'] == 1
+            # Verify predict was called with LSTM state args
+            predict_call = mock_model.predict.call_args
+            assert 'state' in predict_call.kwargs
+            assert 'episode_start' in predict_call.kwargs
 
 
 class TestStatistics:

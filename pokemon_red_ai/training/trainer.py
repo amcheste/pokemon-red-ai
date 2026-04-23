@@ -9,16 +9,21 @@ import os
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
+from sb3_contrib import RecurrentPPO
 
 from ..environment import PokemonRedGymEnv, RewardConfig
 from ..utils import create_directories
 from .callbacks import TrainingCallback, EnhancedTrainingCallback
-from .models import create_ppo_model, get_model_config
+from .models import (
+    create_ppo_model,
+    create_recurrent_ppo_model,
+    get_model_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +66,7 @@ class PokemonTrainer:
 
         # Training components (initialized during training)
         self.env: Optional[gym.Env] = None
-        self.model: Optional[PPO] = None
+        self.model: Optional[Union[PPO, RecurrentPPO]] = None
 
         # Training statistics
         self.training_stats = {
@@ -124,32 +129,45 @@ class PokemonTrainer:
         logger.info("Environment created successfully")
         return env
 
-    def create_model(self, env: gym.Env, algorithm: str = 'PPO', **model_kwargs) -> PPO:
+    def create_model(
+        self,
+        env: gym.Env,
+        algorithm: str = 'PPO',
+        **model_kwargs,
+    ) -> Union[PPO, RecurrentPPO]:
         """
         Create RL model with specified configuration.
 
         Args:
-            env: Training environment
-            algorithm: RL algorithm to use
-            **model_kwargs: Additional model arguments
+            env: Training environment.
+            algorithm: RL algorithm to use ('PPO' or 'RecurrentPPO').
+            **model_kwargs: Additional model arguments (merged on top of
+                defaults from ``get_model_config``).
 
         Returns:
-            Configured RL model
+            Configured RL model.
         """
         logger.info(f"Creating {algorithm} model...")
 
+        tb_log = os.path.join(self.save_dir, 'tensorboard/')
+
         if algorithm == 'PPO':
-            # Get default config and merge with provided kwargs
             config = get_model_config('PPO')
             config.update(model_kwargs)
+            model = create_ppo_model(env=env, tensorboard_log=tb_log, **config)
 
-            model = create_ppo_model(
-                env=env,
-                tensorboard_log=os.path.join(self.save_dir, 'tensorboard/'),
-                **config
+        elif algorithm == 'RecurrentPPO':
+            config = get_model_config('RecurrentPPO')
+            config.update(model_kwargs)
+            model = create_recurrent_ppo_model(
+                env=env, tensorboard_log=tb_log, **config
             )
+
         else:
-            raise ValueError(f"Algorithm {algorithm} not supported")
+            raise ValueError(
+                f"Algorithm {algorithm} not supported. "
+                f"Choose from: PPO, RecurrentPPO"
+            )
 
         logger.info(f"{algorithm} model created successfully")
         return model
@@ -279,7 +297,8 @@ class PokemonTrainer:
              model_path: str,
              episodes: int = 10,
              render: bool = True,
-             max_episode_steps: int = 5000) -> Dict[str, Any]:
+             max_episode_steps: int = 5000,
+             algorithm: str = 'PPO') -> Dict[str, Any]:
         """
         Test trained model and return evaluation metrics.
 
@@ -288,6 +307,9 @@ class PokemonTrainer:
             episodes: Number of test episodes
             render: Whether to show game window
             max_episode_steps: Maximum steps per episode
+            algorithm: Algorithm used to train the model ('PPO' or
+                'RecurrentPPO').  Needed so the correct class loads
+                the checkpoint.
 
         Returns:
             Dictionary with evaluation results
@@ -296,6 +318,7 @@ class PokemonTrainer:
         logger.info("TESTING POKEMON RED RL MODEL")
         logger.info("=" * 50)
         logger.info(f"Model: {model_path}")
+        logger.info(f"Algorithm: {algorithm}")
         logger.info(f"Episodes: {episodes}")
         logger.info(f"Render: {render}")
 
@@ -303,8 +326,13 @@ class PokemonTrainer:
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
 
-        self.model = PPO.load(model_path)
-        logger.info("Model loaded successfully")
+        model_classes = {
+            'PPO': PPO,
+            'RecurrentPPO': RecurrentPPO,
+        }
+        model_cls = model_classes.get(algorithm, PPO)
+        self.model = model_cls.load(model_path)
+        logger.info(f"{algorithm} model loaded successfully")
 
         # Create environment
         self.env = self.create_environment(headless=not render, max_episode_steps=max_episode_steps)
@@ -313,6 +341,7 @@ class PokemonTrainer:
         episode_results = []
         total_reward = 0
         total_steps = 0
+        is_recurrent = algorithm == 'RecurrentPPO'
 
         for episode in range(episodes):
             logger.info(f"Starting test episode {episode + 1}/{episodes}")
@@ -321,8 +350,24 @@ class PokemonTrainer:
             episode_reward = 0
             episode_steps = 0
 
+            # RecurrentPPO needs LSTM states carried across steps;
+            # ``predict()`` returns (action, states) where *states*
+            # must be fed back on the next call.
+            lstm_states = None  # None → model uses zero-init
+            episode_start = True
+
             while True:
-                action, _states = self.model.predict(obs, deterministic=True)
+                if is_recurrent:
+                    action, lstm_states = self.model.predict(
+                        obs,
+                        state=lstm_states,
+                        episode_start=episode_start,
+                        deterministic=True,
+                    )
+                    episode_start = False
+                else:
+                    action, _states = self.model.predict(obs, deterministic=True)
+
                 obs, reward, terminated, truncated, info = self.env.step(action)
 
                 episode_reward += reward
@@ -443,7 +488,9 @@ class PokemonTrainer:
             },
             'training_stats': self.training_stats.copy(),
             'model_info': {
-                'algorithm': 'PPO' if self.model else None,
+                'algorithm': (
+                    type(self.model).__name__ if self.model else None
+                ),
                 'model_loaded': self.model is not None
             },
             'environment_info': {

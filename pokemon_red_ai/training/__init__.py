@@ -19,6 +19,7 @@ from .callbacks import (
 # Model creation utilities
 from .models import (
     create_ppo_model,
+    create_recurrent_ppo_model,
     create_a2c_model,
     create_dqn_model,
     create_model,
@@ -40,6 +41,7 @@ __all__ = [
 
     # Model creation
     "create_ppo_model",
+    "create_recurrent_ppo_model",
     "create_a2c_model",
     "create_dqn_model",
     "create_model",
