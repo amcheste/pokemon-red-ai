@@ -263,6 +263,7 @@ def train(args: argparse.Namespace) -> None:
         algorithm=args.algorithm,
         env=env,
         tensorboard_log=os.path.join(args.save_dir, "tensorboard"),
+        observation_type=args.observation_type,
         **model_overrides,
     )
 
