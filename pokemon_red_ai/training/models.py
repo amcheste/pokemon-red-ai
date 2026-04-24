@@ -100,6 +100,7 @@ def get_model_config(algorithm: str = 'PPO') -> Dict[str, Any]:
 def create_ppo_model(env: gym.Env,
                      tensorboard_log: Optional[str] = None,
                      policy_kwargs: Optional[Dict[str, Any]] = None,
+                     observation_type: str = "multi_modal",
                      **kwargs) -> PPO:
     """
     Create PPO model optimized for Pokemon Red.
@@ -108,6 +109,8 @@ def create_ppo_model(env: gym.Env,
         env: Training environment
         tensorboard_log: Path for tensorboard logs
         policy_kwargs: Additional policy arguments
+        observation_type: Observation type — determines policy string
+            and default policy kwargs.
         **kwargs: Additional PPO arguments
 
     Returns:
@@ -117,19 +120,15 @@ def create_ppo_model(env: gym.Env,
     config = get_model_config('PPO')
     config.update(kwargs)
 
-    # Default policy kwargs for multi-modal observations
-    default_policy_kwargs = {
-        'features_extractor_class': PokemonFeaturesExtractor,
-        'features_extractor_kwargs': {'features_dim': 256},
-        'net_arch': dict(pi=[256, 128], vf=[256, 128]),  # Fixed: use dict instead of list
-        'activation_fn': nn.ReLU
-    }
+    # Select policy string and kwargs based on observation type
+    policy_name = get_policy_type_for_observation(observation_type, "PPO")
+    default_policy_kwargs = get_policy_kwargs_for_observation_type(observation_type)
 
     if policy_kwargs:
         default_policy_kwargs.update(policy_kwargs)
 
     model = PPO(
-        "MultiInputPolicy",
+        policy_name,
         env,
         policy_kwargs=default_policy_kwargs,
         tensorboard_log=tensorboard_log,
@@ -137,6 +136,7 @@ def create_ppo_model(env: gym.Env,
     )
 
     logger.info("PPO model created successfully")
+    logger.info(f"  Policy: {policy_name}")
     logger.info(f"  Learning rate: {config['learning_rate']}")
     logger.info(f"  Batch size: {config['batch_size']}")
     logger.info(f"  Device: {config['device']}")
@@ -150,6 +150,7 @@ def create_recurrent_ppo_model(
     policy_kwargs: Optional[Dict[str, Any]] = None,
     n_lstm_layers: int = 1,
     lstm_hidden_size: int = 256,
+    observation_type: str = "multi_modal",
     **kwargs,
 ) -> RecurrentPPO:
     """
@@ -162,13 +163,14 @@ def create_recurrent_ppo_model(
     dialogue — information that a single frame cannot convey.
 
     Args:
-        env: Training environment (must use a Dict observation space for
-            ``MultiInputLstmPolicy``).
+        env: Training environment.
         tensorboard_log: Path for tensorboard logs.
         policy_kwargs: Additional policy arguments.  Merged on top of
-            defaults (PokemonFeaturesExtractor + net_arch).
+            defaults.
         n_lstm_layers: Number of stacked LSTM layers (1 is usually enough).
         lstm_hidden_size: Hidden size of each LSTM layer.
+        observation_type: Observation type — determines policy string
+            and default policy kwargs.
         **kwargs: Additional RecurrentPPO arguments (overrides defaults
             from ``get_model_config('RecurrentPPO')``).
 
@@ -179,21 +181,19 @@ def create_recurrent_ppo_model(
     config = get_model_config('RecurrentPPO')
     config.update(kwargs)
 
-    # Build policy kwargs with LSTM parameters
-    default_policy_kwargs: Dict[str, Any] = {
-        'features_extractor_class': PokemonFeaturesExtractor,
-        'features_extractor_kwargs': {'features_dim': 256},
-        'net_arch': dict(pi=[256, 128], vf=[256, 128]),
-        'activation_fn': nn.ReLU,
-        'n_lstm_layers': n_lstm_layers,
-        'lstm_hidden_size': lstm_hidden_size,
-    }
+    # Select policy string and kwargs based on observation type
+    policy_name = get_policy_type_for_observation(observation_type, "RecurrentPPO")
+    default_policy_kwargs: Dict[str, Any] = get_policy_kwargs_for_observation_type(observation_type)
+
+    # Add LSTM-specific parameters
+    default_policy_kwargs['n_lstm_layers'] = n_lstm_layers
+    default_policy_kwargs['lstm_hidden_size'] = lstm_hidden_size
 
     if policy_kwargs:
         default_policy_kwargs.update(policy_kwargs)
 
     model = RecurrentPPO(
-        "MultiInputLstmPolicy",
+        policy_name,
         env,
         policy_kwargs=default_policy_kwargs,
         tensorboard_log=tensorboard_log,
@@ -201,6 +201,7 @@ def create_recurrent_ppo_model(
     )
 
     logger.info("RecurrentPPO model created successfully")
+    logger.info(f"  Policy: {policy_name}")
     logger.info(f"  Learning rate: {config['learning_rate']}")
     logger.info(f"  Batch size: {config['batch_size']}")
     logger.info(f"  LSTM layers: {n_lstm_layers}")
@@ -213,6 +214,7 @@ def create_recurrent_ppo_model(
 def create_a2c_model(env: gym.Env,
                      tensorboard_log: Optional[str] = None,
                      policy_kwargs: Optional[Dict[str, Any]] = None,
+                     observation_type: str = "multi_modal",
                      **kwargs) -> A2C:
     """
     Create A2C model optimized for Pokemon Red.
@@ -221,6 +223,8 @@ def create_a2c_model(env: gym.Env,
         env: Training environment
         tensorboard_log: Path for tensorboard logs
         policy_kwargs: Additional policy arguments
+        observation_type: Observation type — determines policy string
+            and default policy kwargs.
         **kwargs: Additional A2C arguments
 
     Returns:
@@ -229,18 +233,14 @@ def create_a2c_model(env: gym.Env,
     config = get_model_config('A2C')
     config.update(kwargs)
 
-    default_policy_kwargs = {
-        'features_extractor_class': PokemonFeaturesExtractor,
-        'features_extractor_kwargs': {'features_dim': 256},
-        'net_arch': dict(pi=[128, 64], vf=[128, 64]),  # Fixed: use dict
-        'activation_fn': nn.ReLU
-    }
+    policy_name = get_policy_type_for_observation(observation_type, "PPO")  # A2C uses same policy names as PPO
+    default_policy_kwargs = get_policy_kwargs_for_observation_type(observation_type)
 
     if policy_kwargs:
         default_policy_kwargs.update(policy_kwargs)
 
     model = A2C(
-        "MultiInputPolicy",
+        policy_name,
         env,
         policy_kwargs=default_policy_kwargs,
         tensorboard_log=tensorboard_log,
@@ -248,6 +248,7 @@ def create_a2c_model(env: gym.Env,
     )
 
     logger.info("A2C model created successfully")
+    logger.info(f"  Policy: {policy_name}")
     return model
 
 
@@ -424,6 +425,7 @@ class PokemonFeaturesExtractor(BaseFeaturesExtractor):
 def create_model(algorithm: str,
                  env: gym.Env,
                  tensorboard_log: Optional[str] = None,
+                 observation_type: str = "multi_modal",
                  **kwargs) -> Union[PPO, RecurrentPPO, A2C, DQN]:
     """
     Factory function to create RL models.
@@ -432,6 +434,8 @@ def create_model(algorithm: str,
         algorithm: Algorithm name ('PPO', 'RecurrentPPO', 'A2C', 'DQN')
         env: Training environment
         tensorboard_log: Path for tensorboard logs
+        observation_type: Observation type — forwarded to the model
+            creator so it can select the correct policy string and kwargs.
         **kwargs: Additional model arguments
 
     Returns:
@@ -447,7 +451,11 @@ def create_model(algorithm: str,
     if algorithm not in creators:
         raise ValueError(f"Unknown algorithm: {algorithm}. Supported: {list(creators.keys())}")
 
-    return creators[algorithm](env, tensorboard_log, **kwargs)
+    # DQN handles its own policy selection from the observation space shape
+    if algorithm == 'DQN':
+        return creators[algorithm](env, tensorboard_log, **kwargs)
+
+    return creators[algorithm](env, tensorboard_log, observation_type=observation_type, **kwargs)
 
 
 def get_policy_kwargs_for_observation_type(observation_type: str) -> Dict[str, Any]:
