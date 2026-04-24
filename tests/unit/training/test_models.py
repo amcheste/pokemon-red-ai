@@ -17,6 +17,7 @@ from pokemon_red_ai.training.models import (
     create_dqn_model,
     create_model,
     get_policy_kwargs_for_observation_type,
+    get_policy_type_for_observation,
     PokemonFeaturesExtractor
 )
 
@@ -747,6 +748,101 @@ class TestBackwardCompatibility:
         # Should always have these for multi_modal
         assert 'features_extractor_class' in kwargs
         assert 'net_arch' in kwargs
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Paper observation treatment: policy kwargs & policy type selection
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestPaperPolicyKwargs:
+    """Test policy kwargs for the 3 paper observation treatments."""
+
+    @pytest.mark.parametrize("obs_type", ["pixel", "symbolic", "hybrid"])
+    def test_paper_obs_types_return_dict(self, obs_type):
+        """All paper observation types return a non-empty dict."""
+        kwargs = get_policy_kwargs_for_observation_type(obs_type)
+
+        assert isinstance(kwargs, dict)
+        assert len(kwargs) > 0
+
+    @pytest.mark.parametrize("obs_type", ["pixel", "symbolic", "hybrid"])
+    def test_paper_obs_types_have_net_arch(self, obs_type):
+        """All paper observation types include a net_arch."""
+        kwargs = get_policy_kwargs_for_observation_type(obs_type)
+
+        assert "net_arch" in kwargs
+        assert isinstance(kwargs["net_arch"], dict)
+        assert "pi" in kwargs["net_arch"]
+        assert "vf" in kwargs["net_arch"]
+
+    @pytest.mark.parametrize("obs_type", ["pixel", "symbolic", "hybrid"])
+    def test_paper_obs_types_have_activation_fn(self, obs_type):
+        """All paper observation types include an activation function."""
+        kwargs = get_policy_kwargs_for_observation_type(obs_type)
+
+        assert "activation_fn" in kwargs
+
+
+class TestGetPolicyTypeForObservation:
+    """Test get_policy_type_for_observation() mapping."""
+
+    # ── Paper treatments ────────────────────────────────────────────
+
+    def test_pixel_ppo_returns_cnn_policy(self):
+        assert get_policy_type_for_observation("pixel", "PPO") == "CnnPolicy"
+
+    def test_pixel_rppo_returns_cnn_lstm_policy(self):
+        assert get_policy_type_for_observation("pixel", "RecurrentPPO") == "CnnLstmPolicy"
+
+    def test_symbolic_ppo_returns_mlp_policy(self):
+        assert get_policy_type_for_observation("symbolic", "PPO") == "MlpPolicy"
+
+    def test_symbolic_rppo_returns_mlp_lstm_policy(self):
+        assert get_policy_type_for_observation("symbolic", "RecurrentPPO") == "MlpLstmPolicy"
+
+    def test_hybrid_ppo_returns_multi_input_policy(self):
+        assert get_policy_type_for_observation("hybrid", "PPO") == "MultiInputPolicy"
+
+    def test_hybrid_rppo_returns_multi_input_lstm_policy(self):
+        assert get_policy_type_for_observation("hybrid", "RecurrentPPO") == "MultiInputLstmPolicy"
+
+    # ── Legacy types ────────────────────────────────────────────────
+
+    def test_multi_modal_ppo(self):
+        assert get_policy_type_for_observation("multi_modal", "PPO") == "MultiInputPolicy"
+
+    def test_screen_only_ppo(self):
+        assert get_policy_type_for_observation("screen_only", "PPO") == "CnnPolicy"
+
+    def test_minimal_ppo(self):
+        assert get_policy_type_for_observation("minimal", "PPO") == "MlpPolicy"
+
+    # ── Error cases ─────────────────────────────────────────────────
+
+    def test_unknown_observation_type_raises(self):
+        with pytest.raises(ValueError, match="Unknown observation type"):
+            get_policy_type_for_observation("invalid_type", "PPO")
+
+    # ── Parameterized exhaustive check ──────────────────────────────
+
+    @pytest.mark.parametrize("obs_type,algo,expected", [
+        ("pixel", "PPO", "CnnPolicy"),
+        ("pixel", "RecurrentPPO", "CnnLstmPolicy"),
+        ("symbolic", "PPO", "MlpPolicy"),
+        ("symbolic", "RecurrentPPO", "MlpLstmPolicy"),
+        ("hybrid", "PPO", "MultiInputPolicy"),
+        ("hybrid", "RecurrentPPO", "MultiInputLstmPolicy"),
+        ("multi_modal", "PPO", "MultiInputPolicy"),
+        ("multi_modal", "RecurrentPPO", "MultiInputLstmPolicy"),
+        ("screen_only", "PPO", "CnnPolicy"),
+        ("screen_only", "RecurrentPPO", "CnnLstmPolicy"),
+        ("minimal", "PPO", "MlpPolicy"),
+        ("minimal", "RecurrentPPO", "MlpLstmPolicy"),
+    ])
+    def test_all_observation_algorithm_combos(self, obs_type, algo, expected):
+        """Exhaustive check of all observation type × algorithm combinations."""
+        assert get_policy_type_for_observation(obs_type, algo) == expected
 
 
 if __name__ == '__main__':
