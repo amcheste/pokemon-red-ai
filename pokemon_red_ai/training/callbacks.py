@@ -8,11 +8,12 @@ live visualization, and Weights & Biases experiment tracking.
 macOS-compatible version that saves plots to files instead of displaying them live.
 """
 
+import json
 import os
 import numpy as np
 import logging
-from collections import deque
-from typing import Dict, Any, Optional
+from collections import defaultdict, deque
+from typing import Any, Dict, List, Optional
 import matplotlib
 # Use Agg backend (no GUI) to avoid conflicts with SDL on macOS
 matplotlib.use('Agg')
@@ -906,3 +907,399 @@ class WandbCallback(BaseCallback):
                     )
             except Exception as exc:
                 logger.warning(f"W&B artifact upload failed: {exc}")
+
+
+# Info-dict keys the monitoring callback consumes from each env step.  These
+# are the same keys ``PokemonRedGymEnv._get_info()`` populates, so the list
+# doubles as the ``info_keywords`` tuple we pass to ``Monitor`` in
+# ``scripts/train.py`` so they also propagate into ``ep_info_buffer``.
+MONITORED_INFO_KEYS: tuple = (
+    "maps_visited",
+    "badges_earned",
+    "locations_visited",
+    "hp_ratio",
+    "event_progress",
+    "current_map",
+    "unique_maps_list",
+    "player_level",
+)
+
+
+class MonitoringCallback(WandbCallback):
+    """W&B callback with game-specific monitoring extensions.
+
+    Extends :class:`WandbCallback` with research-oriented views that
+    tell the reviewer at a glance whether a run is worth continuing:
+
+    * **Map exploration heatmap** — how many episodes visited each map.
+      Logged as a W&B Table and as a Matplotlib bar chart image so it
+      survives when the Table UI is collapsed.
+    * **Event flag progress** — how many episodes triggered each of the
+      18 pre-registered Boulder Path flags (``game.event_flags``), and
+      the earliest episode in which each flag fired.
+    * **Screen captures** — the game screen captured from the training
+      env every ``screen_capture_freq`` episodes, logged as a W&B image.
+    * **Per-episode breakdown** — reward, length, maps visited, final
+      map, badge count, and event flags triggered for every completed
+      episode.  Logged as a W&B Table and mirrored to a JSON snapshot
+      at ``<save_path>/dashboard_state.json`` so ``scripts/monitor.py``
+      can read the same data without a W&B account.
+
+    All logging failures are caught and logged at DEBUG level — they
+    never interrupt training.
+    """
+
+    def __init__(
+        self,
+        save_freq: int = 50_000,
+        save_path: str = "./models/",
+        log_freq: int = 1,
+        screen_capture_freq: int = 10,
+        dashboard_state_path: Optional[str] = None,
+        verbose: int = 1,
+    ):
+        """
+        Args:
+            save_freq: Checkpoint save frequency (timesteps) — see
+                :class:`WandbCallback`.
+            save_path: Root directory for checkpoints, dashboard state,
+                and any derived artifacts.
+            log_freq: W&B log throttle — only log every Nth rollout.
+            screen_capture_freq: Episodes between screen-capture logs.
+                Set to 0 to disable screen captures entirely.
+            dashboard_state_path: Where to write ``dashboard_state.json``
+                for the local Streamlit dashboard.  Defaults to
+                ``<save_path>/dashboard_state.json``.
+            verbose: 0 silent, 1 info, 2 debug.
+        """
+        super().__init__(
+            save_freq=save_freq,
+            save_path=save_path,
+            log_freq=log_freq,
+            verbose=verbose,
+        )
+        self.screen_capture_freq = max(0, int(screen_capture_freq))
+        self.dashboard_state_path = dashboard_state_path or os.path.join(
+            save_path, "dashboard_state.json"
+        )
+
+        # Per-episode state
+        self._episode_count: int = 0
+        self._episodes_since_screen: int = 0
+        self._map_visit_counts: Dict[int, int] = defaultdict(int)
+        self._flag_trigger_counts: Dict[str, int] = defaultdict(int)
+        self._flag_first_triggered: Dict[str, int] = {}
+        self._episode_rows: List[Dict[str, Any]] = []
+
+        os.makedirs(os.path.dirname(os.path.abspath(self.dashboard_state_path)), exist_ok=True)
+
+        if self.verbose >= 1:
+            logger.info(
+                "MonitoringCallback initialised "
+                f"(screen_capture_freq={self.screen_capture_freq} episodes, "
+                f"dashboard_state={self.dashboard_state_path})"
+            )
+
+    # ------------------------------------------------------------------
+    # SB3 callback interface
+    # ------------------------------------------------------------------
+
+    def _on_step(self) -> bool:
+        """Detect episode endings and record per-episode stats."""
+        dones = self.locals.get("dones")
+        infos = self.locals.get("infos")
+        if dones is None or infos is None:
+            return True
+
+        for done, info in zip(dones, infos):
+            if not done:
+                continue
+            self._record_episode(info)
+
+        return True
+
+    def _on_rollout_end(self) -> None:
+        """Base class handles aggregate metrics; we add the extras."""
+        super()._on_rollout_end()
+
+        # Throttle extras at the same rate as base metrics
+        if self._rollout_count % self.log_freq != 0:
+            return
+
+        self._log_extras()
+        self._write_dashboard_state()
+
+    # ------------------------------------------------------------------
+    # Episode recording
+    # ------------------------------------------------------------------
+
+    def _record_episode(self, info: Dict[str, Any]) -> None:
+        self._episode_count += 1
+        self._episodes_since_screen += 1
+
+        ep_info = info.get("episode") or {}
+        reward = float(ep_info.get("r", 0.0))
+        length = int(ep_info.get("l", 0))
+
+        # Custom keys from PokemonRedGymEnv._get_info()
+        unique_maps = info.get("unique_maps_list") or []
+        event_progress = info.get("event_progress") or {}
+        final_map = int(info.get("current_map", 0) or 0)
+        badges = int(info.get("badges_earned", 0) or 0)
+        locations = int(info.get("locations_visited", 0) or 0)
+        triggered_names = list(event_progress.get("triggered_names", []) or [])
+        flags_triggered = int(event_progress.get("flags_triggered", len(triggered_names)))
+
+        # Update cumulative counts
+        for map_id in unique_maps:
+            try:
+                self._map_visit_counts[int(map_id)] += 1
+            except (TypeError, ValueError):
+                continue
+
+        for flag_name in triggered_names:
+            self._flag_trigger_counts[flag_name] += 1
+            self._flag_first_triggered.setdefault(flag_name, self._episode_count)
+
+        self._episode_rows.append(
+            {
+                "episode": self._episode_count,
+                "global_step": int(self.num_timesteps),
+                "reward": reward,
+                "length": length,
+                "maps_visited": len(unique_maps),
+                "final_map": final_map,
+                "badges": badges,
+                "event_flags_triggered": flags_triggered,
+                "locations_visited": locations,
+                "triggered_flags": triggered_names,
+            }
+        )
+
+        # Screen capture on schedule (at episode boundary)
+        if (
+            self.screen_capture_freq > 0
+            and self._episodes_since_screen >= self.screen_capture_freq
+        ):
+            self._log_screen_capture()
+            self._episodes_since_screen = 0
+
+    # ------------------------------------------------------------------
+    # Screen capture
+    # ------------------------------------------------------------------
+
+    def _log_screen_capture(self) -> None:
+        """Capture the current game screen and log as a W&B image."""
+        screen = self._get_env_screen()
+        if screen is None:
+            return
+
+        try:
+            img = self._wandb.Image(
+                screen,
+                caption=f"episode {self._episode_count} | step {self.num_timesteps}",
+            )
+            self._wandb.log(
+                {"game/screen": img},
+                step=self.num_timesteps,
+            )
+        except Exception as exc:
+            logger.debug(f"W&B screen log failed: {exc}")
+
+    def _get_env_screen(self) -> Optional[np.ndarray]:
+        """Fetch the first env's screen as (H, W, 3) uint8, or None."""
+        env = getattr(self, "training_env", None)
+        if env is None:
+            return None
+
+        try:
+            screens = env.env_method("render", "rgb_array", indices=[0])
+        except Exception:
+            try:
+                screens = env.env_method("render", indices=[0])
+            except Exception as exc:
+                logger.debug(f"env_method('render') failed: {exc}")
+                return None
+
+        if not screens:
+            return None
+        arr = screens[0]
+        if arr is None or not isinstance(arr, np.ndarray):
+            return None
+        if arr.dtype != np.uint8:
+            arr = np.clip(arr, 0, 255).astype(np.uint8)
+        return arr
+
+    # ------------------------------------------------------------------
+    # Extras logging
+    # ------------------------------------------------------------------
+
+    def _log_extras(self) -> None:
+        """Log heatmap, flag progress, and per-episode table to W&B."""
+        try:
+            self._log_map_heatmap()
+        except Exception as exc:
+            logger.debug(f"Map heatmap log failed: {exc}")
+
+        try:
+            self._log_flag_progress()
+        except Exception as exc:
+            logger.debug(f"Flag progress log failed: {exc}")
+
+        try:
+            self._log_episode_table()
+        except Exception as exc:
+            logger.debug(f"Episode table log failed: {exc}")
+
+    def _log_map_heatmap(self) -> None:
+        if not self._map_visit_counts:
+            return
+
+        rows = sorted(self._map_visit_counts.items())
+        table = self._wandb.Table(columns=["map_id", "visit_count"])
+        for map_id, count in rows:
+            table.add_data(int(map_id), int(count))
+
+        payload: Dict[str, Any] = {"game/map_heatmap_table": table}
+
+        chart = self._render_map_heatmap_chart(rows)
+        if chart is not None:
+            payload["game/map_heatmap"] = self._wandb.Image(
+                chart,
+                caption=f"Map visit counts (cumulative, step {self.num_timesteps})",
+            )
+
+        self._wandb.log(payload, step=self.num_timesteps)
+
+    @staticmethod
+    def _render_map_heatmap_chart(rows: List[tuple]) -> Optional[np.ndarray]:
+        """Render a simple horizontal-bar chart of map visit counts."""
+        if not rows:
+            return None
+
+        try:
+            map_ids = [str(r[0]) for r in rows]
+            counts = [r[1] for r in rows]
+
+            fig, ax = plt.subplots(figsize=(6, max(2.5, 0.25 * len(rows))))
+            ax.barh(map_ids, counts, color="#3b82f6")
+            ax.set_xlabel("Episodes that visited map")
+            ax.set_ylabel("map_id")
+            ax.set_title("Map exploration heatmap")
+            ax.invert_yaxis()
+            fig.tight_layout()
+
+            fig.canvas.draw()
+            img = np.asarray(fig.canvas.buffer_rgba())[..., :3].copy()
+            plt.close(fig)
+            return img
+        except Exception as exc:
+            logger.debug(f"Heatmap render failed: {exc}")
+            return None
+
+    def _log_flag_progress(self) -> None:
+        try:
+            from ..game.event_flags import BOULDER_PATH_FLAGS
+        except Exception as exc:
+            logger.debug(f"Cannot import BOULDER_PATH_FLAGS: {exc}")
+            return
+
+        table = self._wandb.Table(
+            columns=["flag_name", "trigger_count", "first_triggered_episode"]
+        )
+        for flag_name in BOULDER_PATH_FLAGS:
+            count = int(self._flag_trigger_counts.get(flag_name, 0))
+            first = self._flag_first_triggered.get(flag_name, -1)
+            table.add_data(flag_name, count, int(first))
+
+        metrics: Dict[str, Any] = {"game/flag_progress": table}
+
+        total_flags = len(BOULDER_PATH_FLAGS)
+        unique_flags_ever = sum(
+            1 for n in BOULDER_PATH_FLAGS if self._flag_trigger_counts.get(n, 0) > 0
+        )
+        metrics["game/unique_flags_ever"] = unique_flags_ever
+        metrics["game/unique_flags_fraction"] = (
+            unique_flags_ever / total_flags if total_flags else 0.0
+        )
+
+        self._wandb.log(metrics, step=self.num_timesteps)
+
+    def _log_episode_table(self) -> None:
+        if not self._episode_rows:
+            return
+
+        table = self._wandb.Table(
+            columns=[
+                "episode",
+                "global_step",
+                "reward",
+                "length",
+                "maps_visited",
+                "final_map",
+                "badges",
+                "event_flags_triggered",
+                "locations_visited",
+            ]
+        )
+        for row in self._episode_rows[-500:]:  # cap to avoid huge payloads
+            table.add_data(
+                row["episode"],
+                row["global_step"],
+                row["reward"],
+                row["length"],
+                row["maps_visited"],
+                row["final_map"],
+                row["badges"],
+                row["event_flags_triggered"],
+                row["locations_visited"],
+            )
+        self._wandb.log(
+            {"game/episodes": table},
+            step=self.num_timesteps,
+        )
+
+    # ------------------------------------------------------------------
+    # Dashboard JSON snapshot
+    # ------------------------------------------------------------------
+
+    def _write_dashboard_state(self) -> None:
+        """Mirror monitoring state to a JSON file for local dashboards.
+
+        Overwrites the file atomically so readers never see a partial
+        write.  Failures are swallowed (logged at DEBUG) — the snapshot
+        is best-effort.
+        """
+        try:
+            from ..game.event_flags import BOULDER_PATH_FLAGS
+            flag_names = list(BOULDER_PATH_FLAGS)
+        except Exception:
+            flag_names = list(self._flag_trigger_counts)
+
+        snapshot = {
+            "num_timesteps": int(self.num_timesteps),
+            "episode_count": self._episode_count,
+            "best_reward": (
+                self.best_reward if self.best_reward != -float("inf") else None
+            ),
+            "map_visit_counts": {
+                str(k): int(v) for k, v in self._map_visit_counts.items()
+            },
+            "flag_trigger_counts": {
+                name: int(self._flag_trigger_counts.get(name, 0))
+                for name in flag_names
+            },
+            "flag_first_triggered": {
+                name: int(self._flag_first_triggered.get(name, -1))
+                for name in flag_names
+            },
+            "episodes": self._episode_rows[-200:],
+        }
+
+        try:
+            tmp_path = self.dashboard_state_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as fh:
+                json.dump(snapshot, fh, indent=2)
+            os.replace(tmp_path, self.dashboard_state_path)
+        except Exception as exc:
+            logger.debug(f"Dashboard state write failed: {exc}")

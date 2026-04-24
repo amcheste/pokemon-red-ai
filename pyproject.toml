@@ -33,6 +33,14 @@ Homepage = "https://github.com/amcheste/pokemon-red-ai"
 Repository = "https://github.com/amcheste/pokemon-red-ai"
 Issues = "https://github.com/amcheste/pokemon-red-ai/issues"
 
+[project.optional-dependencies]
+# Install with: pip install -e ".[dashboard]"
+# Only needed to run ``scripts/monitor.py`` — training itself does not
+# depend on Streamlit.
+dashboard = [
+    "streamlit>=1.28",
+]
+
 [project.scripts]
 pokemon-ai = "pokemon_red_ai.cli.commands:main"
 
