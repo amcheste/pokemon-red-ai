@@ -106,8 +106,12 @@ def _make_step_info(
     current_map=2,
     badges=1,
     locations=42,
+    player_level=5,
+    pokemon_count=1,
+    money=3000,
+    reward_components=None,
 ):
-    return {
+    info = {
         "episode": {"r": reward, "l": length},
         "unique_maps_list": list(unique_maps),
         "event_progress": {
@@ -117,7 +121,13 @@ def _make_step_info(
         "current_map": current_map,
         "badges_earned": badges,
         "locations_visited": locations,
+        "player_level": player_level,
+        "pokemon_count": pokemon_count,
+        "money": money,
     }
+    if reward_components is not None:
+        info["reward_components"] = reward_components
+    return info
 
 
 class TestOnStepEpisodeTracking:
@@ -284,11 +294,12 @@ class TestRolloutEndExtras:
         assert "game/episodes" in logged
         table = logged["game/episodes"]
         assert len(table.data) == 1
-        # Columns match expected order
+        # Columns match expected order (including AMC-76 additions)
         expected_cols = {
             "episode", "global_step", "reward", "length",
             "maps_visited", "final_map", "badges",
             "event_flags_triggered", "locations_visited",
+            "player_level", "pokemon_count", "money",
         }
         assert expected_cols == set(table.columns)
 
@@ -338,6 +349,296 @@ class TestDashboardStateSnapshot:
 
         # Should not raise
         monitoring_cb._write_dashboard_state()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Reward component accumulation (AMC-76)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestRewardComponentAccumulation:
+    """Tests for per-step reward component tracking."""
+
+    def test_accumulates_across_steps(self, monitoring_cb):
+        """Components should sum over the episode, not just last step."""
+        # Step 1: non-terminal, has reward components
+        monitoring_cb.locals = {
+            "dones": [False],
+            "infos": [{"reward_components": {"exploration": 5.0, "time": -0.01}}],
+        }
+        monitoring_cb._on_step()
+
+        # Step 2: non-terminal
+        monitoring_cb.locals = {
+            "dones": [False],
+            "infos": [{"reward_components": {"exploration": 3.0, "time": -0.01}}],
+        }
+        monitoring_cb._on_step()
+
+        # Step 3: terminal — triggers _record_episode
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(
+                reward_components={"exploration": 2.0, "time": -0.01, "badge": 150.0},
+            )],
+        }
+        monitoring_cb._on_step()
+
+        assert monitoring_cb._episode_count == 1
+        rc = monitoring_cb._episode_reward_components[0]
+        assert rc["exploration"] == pytest.approx(10.0)  # 5 + 3 + 2
+        assert rc["time"] == pytest.approx(-0.03)  # -0.01 * 3
+        assert rc["badge"] == pytest.approx(150.0)
+
+    def test_accumulator_resets_after_episode(self, monitoring_cb):
+        """Each episode gets its own accumulation, no bleed."""
+        # Episode 1
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(
+                reward_components={"exploration": 5.0},
+            )],
+        }
+        monitoring_cb._on_step()
+
+        # Episode 2 (different components)
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(
+                reward_components={"badge": 100.0},
+            )],
+        }
+        monitoring_cb._on_step()
+
+        assert len(monitoring_cb._episode_reward_components) == 2
+        assert monitoring_cb._episode_reward_components[0] == {"exploration": 5.0}
+        assert monitoring_cb._episode_reward_components[1] == {"badge": 100.0}
+
+    def test_handles_missing_components_gracefully(self, monitoring_cb):
+        """Steps without reward_components should not crash."""
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info()],  # no reward_components
+        }
+        monitoring_cb._on_step()
+        assert monitoring_cb._episode_count == 1
+        # No components recorded, but episode still logged
+        row = monitoring_cb._episode_rows[0]
+        assert row["reward_components"] == {}
+
+    def test_multi_env_isolation(self, monitoring_cb):
+        """Accumulators for different envs stay separate."""
+        # Both envs step, only env 0 terminates
+        monitoring_cb.locals = {
+            "dones": [True, False],
+            "infos": [
+                _make_step_info(reward_components={"exploration": 5.0}),
+                {"reward_components": {"exploration": 99.0}},
+            ],
+        }
+        monitoring_cb._on_step()
+
+        # Env 0's episode should NOT include env 1's components
+        assert monitoring_cb._episode_count == 1
+        rc = monitoring_cb._episode_reward_components[0]
+        assert rc["exploration"] == pytest.approx(5.0)
+
+        # Env 1's accumulator should still be active
+        assert 1 in monitoring_cb._reward_accumulators
+        assert monitoring_cb._reward_accumulators[1]["exploration"] == pytest.approx(99.0)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Game state metrics (AMC-76)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestGameStateMetrics:
+    """Tests for level, money, and pokemon count tracking."""
+
+    def test_records_player_level(self, monitoring_cb):
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(player_level=7)],
+        }
+        monitoring_cb._on_step()
+
+        assert monitoring_cb._level_history == [7]
+        row = monitoring_cb._episode_rows[0]
+        assert row["player_level"] == 7
+
+    def test_records_pokemon_count(self, monitoring_cb):
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(pokemon_count=3)],
+        }
+        monitoring_cb._on_step()
+
+        assert monitoring_cb._pokemon_count_history == [3]
+        row = monitoring_cb._episode_rows[0]
+        assert row["pokemon_count"] == 3
+
+    def test_records_money(self, monitoring_cb):
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(money=5000)],
+        }
+        monitoring_cb._on_step()
+
+        assert monitoring_cb._money_history == [5000]
+
+    def test_logs_level_curves_to_wandb(self, monitoring_cb, mock_wandb):
+        # Populate multiple episodes with increasing levels
+        for level in [5, 6, 7, 8]:
+            monitoring_cb.locals = {
+                "dones": [True],
+                "infos": [_make_step_info(player_level=level)],
+            }
+            monitoring_cb._on_step()
+
+        monitoring_cb.num_timesteps = 4096
+        monitoring_cb._on_rollout_end()
+
+        logged = _merge_all_logs(mock_wandb)
+        assert "game/player_level_mean" in logged
+        assert "game/player_level_max" in logged
+        assert logged["game/player_level_max"] == 8
+        assert logged["game/player_level_mean"] == pytest.approx(6.5)
+
+    def test_logs_reward_breakdown_to_wandb(self, monitoring_cb, mock_wandb):
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(
+                reward_components={"exploration": 10.0, "time": -0.5, "badge": 150.0},
+            )],
+        }
+        monitoring_cb._on_step()
+
+        monitoring_cb.num_timesteps = 2048
+        monitoring_cb._on_rollout_end()
+
+        logged = _merge_all_logs(mock_wandb)
+        assert "reward/exploration_mean" in logged
+        assert "reward/badge_mean" in logged
+        assert "reward/time_mean" in logged
+        assert "reward/total_components_mean" in logged
+        assert logged["reward/badge_mean"] == pytest.approx(150.0)
+
+    def test_missing_game_state_uses_defaults(self, monitoring_cb):
+        """Info dict without level/money/count should use 0."""
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [{"episode": {"r": 1.0, "l": 10}}],
+        }
+        monitoring_cb._on_step()
+
+        row = monitoring_cb._episode_rows[0]
+        assert row["player_level"] == 0
+        assert row["pokemon_count"] == 0
+        assert row["money"] == 0
+
+
+# ──────────────────────────────────────────────────────────────────────
+# W&B define_metric (AMC-76)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestWandbMetricDefinition:
+    """Tests for W&B panel organisation."""
+
+    def test_define_metric_called_on_init(self, mock_wandb, tmp_path):
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            cb = MonitoringCallback(
+                save_path=str(tmp_path),
+                verbose=0,
+            )
+
+        mock_wandb.define_metric.assert_called()
+        calls = [str(c) for c in mock_wandb.define_metric.call_args_list]
+        # Should have calls for global_step, episode/*, game/*, reward/*
+        assert any("global_step" in c for c in calls)
+        assert any("episode/*" in c for c in calls)
+        assert any("game/*" in c for c in calls)
+        assert any("reward/*" in c for c in calls)
+
+    def test_define_metric_failure_is_silent(self, mock_wandb, tmp_path):
+        mock_wandb.define_metric.side_effect = AttributeError("old wandb")
+        with patch.dict("sys.modules", {"wandb": mock_wandb}):
+            # Should not raise
+            cb = MonitoringCallback(
+                save_path=str(tmp_path),
+                verbose=0,
+            )
+        assert cb is not None
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Enhanced dashboard snapshot (AMC-76)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestEnhancedDashboardSnapshot:
+    """Tests for enhanced dashboard JSON state."""
+
+    def test_snapshot_includes_level_history(self, monitoring_cb):
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(player_level=8)],
+        }
+        monitoring_cb._on_step()
+        monitoring_cb.num_timesteps = 100
+        monitoring_cb._on_rollout_end()
+
+        with open(monitoring_cb.dashboard_state_path) as fh:
+            snapshot = json.load(fh)
+
+        assert "level_history" in snapshot
+        assert snapshot["level_history"] == [8]
+
+    def test_snapshot_includes_reward_summary(self, monitoring_cb):
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(
+                reward_components={"exploration": 10.0, "badge": 150.0},
+            )],
+        }
+        monitoring_cb._on_step()
+        monitoring_cb.num_timesteps = 100
+        monitoring_cb._on_rollout_end()
+
+        with open(monitoring_cb.dashboard_state_path) as fh:
+            snapshot = json.load(fh)
+
+        assert "reward_component_summary" in snapshot
+        assert snapshot["reward_component_summary"]["exploration"] == pytest.approx(10.0)
+        assert snapshot["reward_component_summary"]["badge"] == pytest.approx(150.0)
+
+    def test_snapshot_includes_money_history(self, monitoring_cb):
+        monitoring_cb.locals = {
+            "dones": [True],
+            "infos": [_make_step_info(money=5000)],
+        }
+        monitoring_cb._on_step()
+        monitoring_cb.num_timesteps = 100
+        monitoring_cb._on_rollout_end()
+
+        with open(monitoring_cb.dashboard_state_path) as fh:
+            snapshot = json.load(fh)
+
+        assert "money_history" in snapshot
+        assert snapshot["money_history"] == [5000]
+        assert "pokemon_count_history" in snapshot
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Info keys contract (AMC-76 additions)
+# ──────────────────────────────────────────────────────────────────────
+
+
+def test_monitored_info_keys_include_new_fields():
+    """AMC-76 added pokemon_count and money to MONITORED_INFO_KEYS."""
+    assert "pokemon_count" in MONITORED_INFO_KEYS
+    assert "money" in MONITORED_INFO_KEYS
 
 
 # ──────────────────────────────────────────────────────────────────────
