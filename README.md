@@ -95,6 +95,21 @@ pokemon-ai train --rom PokemonRed.gb --timesteps 100000
 pokemon-ai test --rom PokemonRed.gb --model models/best_model.zip --episodes 10
 ```
 
+### Monitoring a Training Run
+
+The `scripts/train.py` entrypoint wires in a [`MonitoringCallback`](pokemon_red_ai/training/callbacks.py) that logs map-exploration heatmaps, the 18 Boulder-Path event flags, periodic game-screen captures, and a per-episode breakdown to Weights & Biases. The same data is mirrored to `<save_dir>/dashboard_state.json` so you can inspect a run locally without a W&B account:
+
+```bash
+# Start training (W&B is enabled by default; pass --no-wandb to skip)
+python scripts/train.py --rom PokemonRed.gb --save-dir ./training_output/run1
+
+# In another terminal, launch the local dashboard
+pip install -e ".[dashboard]"          # one-time: install Streamlit
+streamlit run scripts/monitor.py -- --runs-dir ./training_output
+```
+
+The dashboard supports side-by-side run comparison (e.g. multiple seeds) and auto-reads from `dashboard_state.json`, the SB3 `monitor.csv`, and TensorBoard scalars (if present).
+
 ### Using the Python API
 
 ```python
