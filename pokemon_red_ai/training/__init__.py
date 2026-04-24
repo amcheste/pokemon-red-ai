@@ -15,6 +15,8 @@ from .callbacks import (
     EarlyStopping,
     PerformanceMonitor,
     WandbCallback,
+    MonitoringCallback,
+    MONITORED_INFO_KEYS,
 )
 
 # Model creation utilities
@@ -41,6 +43,8 @@ __all__ = [
     "EarlyStopping",
     "PerformanceMonitor",
     "WandbCallback",
+    "MonitoringCallback",
+    "MONITORED_INFO_KEYS",
 
     # Model creation
     "create_ppo_model",

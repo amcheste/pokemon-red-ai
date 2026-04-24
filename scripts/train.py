@@ -49,7 +49,8 @@ from pokemon_red_ai.training.models import (
 )
 from pokemon_red_ai.training.callbacks import (
     TrainingCallback,
-    WandbCallback,
+    MonitoringCallback,
+    MONITORED_INFO_KEYS,
 )
 from pokemon_red_ai.utils import create_directories
 
@@ -156,6 +157,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-wandb", action="store_true",
         help="Disable W&B logging entirely.",
     )
+    p.add_argument(
+        "--screen-capture-freq", type=int, default=10,
+        help="Episodes between game-screen captures logged to W&B. 0 disables.",
+    )
 
     # ── Misc ─────────────────────────────────────────────────────────
     p.add_argument(
@@ -231,7 +236,14 @@ def train(args: argparse.Namespace) -> None:
         observation_type=args.observation_type,
         save_state_path=args.save_state,
     )
-    env = Monitor(env, os.path.join(args.save_dir, "monitor"))
+    # ``info_keywords`` makes Monitor copy our custom per-step metrics
+    # into ``ep_info_buffer``, which is what the W&B callback reads for
+    # aggregate episode stats (maps_visited mean, badges_max, etc.).
+    env = Monitor(
+        env,
+        os.path.join(args.save_dir, "monitor"),
+        info_keywords=MONITORED_INFO_KEYS,
+    )
 
     logger.info(
         f"Environment ready  "
@@ -330,9 +342,10 @@ def train(args: argparse.Namespace) -> None:
 
     if wandb_run is not None:
         callbacks.append(
-            WandbCallback(
+            MonitoringCallback(
                 save_freq=args.save_freq,
                 save_path=args.save_dir,
+                screen_capture_freq=args.screen_capture_freq,
                 verbose=1,
             )
         )
