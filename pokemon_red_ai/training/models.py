@@ -455,7 +455,8 @@ def get_policy_kwargs_for_observation_type(observation_type: str) -> Dict[str, A
     Get appropriate policy kwargs based on observation type.
 
     Args:
-        observation_type: Type of observation ('multi_modal', 'minimal', 'screen_only')
+        observation_type: Type of observation ('multi_modal', 'minimal',
+            'screen_only', 'pixel', 'symbolic', 'hybrid')
 
     Returns:
         Policy kwargs dictionary
@@ -477,9 +478,66 @@ def get_policy_kwargs_for_observation_type(observation_type: str) -> Dict[str, A
             'net_arch': dict(pi=[128, 64], vf=[128, 64]),  # Fixed: use dict
             'activation_fn': nn.ReLU
         }
+    # ── Paper observation treatments ────────────────────────────────
+    elif observation_type == "pixel":
+        # SB3's NatureCNN auto-applies for Box image spaces
+        return {
+            'net_arch': dict(pi=[256, 128], vf=[256, 128]),
+            'activation_fn': nn.ReLU,
+        }
+    elif observation_type == "symbolic":
+        return {
+            'net_arch': dict(pi=[256, 128], vf=[256, 128]),
+            'activation_fn': nn.ReLU,
+        }
+    elif observation_type == "hybrid":
+        # SB3's CombinedExtractor auto-applies for Dict spaces
+        # with mixed image + vector keys
+        return {
+            'net_arch': dict(pi=[256, 128], vf=[256, 128]),
+            'activation_fn': nn.ReLU,
+        }
     else:
         logger.warning(f"Unknown observation type: {observation_type}, using default")
         return {}
+
+
+def get_policy_type_for_observation(
+    observation_type: str,
+    algorithm: str = "PPO",
+) -> str:
+    """
+    Return the correct SB3 policy string for a given observation type
+    and algorithm combination.
+
+    Args:
+        observation_type: One of 'pixel', 'symbolic', 'hybrid',
+            'multi_modal', 'screen_only', 'minimal'.
+        algorithm: 'PPO' or 'RecurrentPPO'.
+
+    Returns:
+        Policy class name string (e.g. 'CnnPolicy', 'MlpLstmPolicy').
+    """
+    # Map observation type → (PPO policy, RecurrentPPO policy)
+    policy_map = {
+        # Paper treatments
+        "pixel":       ("CnnPolicy",        "CnnLstmPolicy"),
+        "symbolic":    ("MlpPolicy",        "MlpLstmPolicy"),
+        "hybrid":      ("MultiInputPolicy", "MultiInputLstmPolicy"),
+        # Legacy types
+        "multi_modal": ("MultiInputPolicy", "MultiInputLstmPolicy"),
+        "screen_only": ("CnnPolicy",        "CnnLstmPolicy"),
+        "minimal":     ("MlpPolicy",        "MlpLstmPolicy"),
+    }
+
+    if observation_type not in policy_map:
+        raise ValueError(
+            f"Unknown observation type: {observation_type}. "
+            f"Valid types: {list(policy_map.keys())}"
+        )
+
+    ppo_policy, rppo_policy = policy_map[observation_type]
+    return rppo_policy if algorithm == "RecurrentPPO" else ppo_policy
 
 
 def optimize_hyperparameters(env: gym.Env,

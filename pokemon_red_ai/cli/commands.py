@@ -130,7 +130,7 @@ def main(ctx):
 @click.option('--reward-strategy', default='events', help='Reward strategy (events = event-flag milestones)',
               type=click.Choice(['standard', 'exploration', 'progress', 'sparse', 'events']))
 @click.option('--observation-type', default='multi_modal', help='Observation type',
-              type=click.Choice(['multi_modal', 'screen_only', 'minimal']))
+              type=click.Choice(['multi_modal', 'screen_only', 'minimal', 'pixel', 'symbolic', 'hybrid']))
 @click.option('--show-game/--no-show-game', default=False, help='Show game window during training')
 @click.option('--show-plots/--no-show-plots', default=False, help='Show live training plots')
 @click.option('--monitor-mode', is_flag=True, help='Enable monitoring (game + plots)')

@@ -25,7 +25,16 @@ from .observations import (
     get_screen_features,
     create_minimal_observation_space,
     process_minimal_observation,
-    preprocess_screen_for_cnn
+    preprocess_screen_for_cnn,
+    # Paper observation treatments
+    NUM_EVENT_FLAGS,
+    SYMBOLIC_DIM,
+    create_pixel_observation_space,
+    process_pixel_observation,
+    create_symbolic_observation_space,
+    process_symbolic_observation,
+    create_hybrid_observation_space,
+    process_hybrid_observation,
 )
 
 __all__ = [
@@ -53,4 +62,14 @@ __all__ = [
     "create_minimal_observation_space",
     "process_minimal_observation",
     "preprocess_screen_for_cnn",
+
+    # Paper observation treatments
+    "NUM_EVENT_FLAGS",
+    "SYMBOLIC_DIM",
+    "create_pixel_observation_space",
+    "process_pixel_observation",
+    "create_symbolic_observation_space",
+    "process_symbolic_observation",
+    "create_hybrid_observation_space",
+    "process_hybrid_observation",
 ]

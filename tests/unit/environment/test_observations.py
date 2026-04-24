@@ -18,7 +18,18 @@ from pokemon_red_ai.environment.observations import (
     create_minimal_observation_space,
     process_minimal_observation,
     validate_observation,
-    preprocess_screen_for_cnn
+    preprocess_screen_for_cnn,
+    # Paper observation treatments
+    NUM_EVENT_FLAGS,
+    SYMBOLIC_DIM,
+    _screen_to_grayscale,
+    create_pixel_observation_space,
+    process_pixel_observation,
+    create_symbolic_observation_space,
+    _build_symbolic_vector,
+    process_symbolic_observation,
+    create_hybrid_observation_space,
+    process_hybrid_observation,
 )
 
 
@@ -673,6 +684,377 @@ class TestObservationPerformance:
 
         result = benchmark_runner.run('downsample', downsample_op, iterations=1000)
         assert result['mean'] < 0.005  # Should be under 5ms
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Paper observation treatments: pixel / symbolic / hybrid
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestConstants:
+    """Test paper observation constants."""
+
+    def test_num_event_flags(self):
+        """NUM_EVENT_FLAGS matches the 18 pre-registered boulder path flags."""
+        assert NUM_EVENT_FLAGS == 18
+
+    def test_symbolic_dim(self):
+        """SYMBOLIC_DIM = position(3) + stats(6) + flags(18) + exploration(2) = 29."""
+        assert SYMBOLIC_DIM == 29
+        assert SYMBOLIC_DIM == 3 + 6 + NUM_EVENT_FLAGS + 2
+
+
+class TestScreenToGrayscale:
+    """Test the _screen_to_grayscale helper."""
+
+    def test_rgb_to_grayscale(self):
+        """Convert a 3-channel RGB image to single-channel grayscale."""
+        screen = np.random.randint(0, 255, (72, 80, 3), dtype=np.uint8)
+        gray = _screen_to_grayscale(screen)
+
+        assert gray.dtype == np.uint8
+        # Result should be 2D or have a trailing channel dim
+        assert gray.shape[0] == 72
+        assert gray.shape[1] == 80
+
+    def test_rgba_to_grayscale(self):
+        """Convert a 4-channel RGBA image (drops alpha) to grayscale."""
+        screen = np.random.randint(0, 255, (72, 80, 4), dtype=np.uint8)
+        gray = _screen_to_grayscale(screen)
+
+        assert gray.dtype == np.uint8
+        assert gray.shape[0] == 72
+        assert gray.shape[1] == 80
+
+    def test_single_channel_passthrough(self):
+        """Single-channel input is returned as uint8."""
+        screen = np.random.randint(0, 255, (72, 80, 1), dtype=np.uint8)
+        gray = _screen_to_grayscale(screen)
+
+        assert gray.dtype == np.uint8
+        assert gray.shape == (72, 80, 1)
+
+    def test_grayscale_2d_input(self):
+        """2D grayscale input gets a trailing channel dim."""
+        screen = np.random.randint(0, 255, (72, 80), dtype=np.uint8)
+        gray = _screen_to_grayscale(screen)
+
+        assert gray.dtype == np.uint8
+        assert gray.shape == (72, 80, 1)
+
+
+class TestPixelObservation:
+    """Test pixel observation space and processing (Treatment 1)."""
+
+    def test_create_pixel_space_default(self):
+        """Default pixel space is Box(72, 80, 1, uint8)."""
+        space = create_pixel_observation_space()
+
+        assert isinstance(space, gym.spaces.Box)
+        assert space.shape == (72, 80, 1)
+        assert space.dtype == np.uint8
+        assert space.low.min() == 0
+        assert space.high.max() == 255
+
+    def test_create_pixel_space_custom_size(self):
+        """Pixel space respects custom screen_size."""
+        space = create_pixel_observation_space(screen_size=(40, 36))
+
+        assert space.shape == (36, 40, 1)
+
+    def test_process_pixel_observation_shape(self):
+        """process_pixel_observation returns (H, W, 1) uint8."""
+        agent = Mock()
+        agent.get_screen_array = Mock(
+            return_value=np.random.randint(0, 255, (144, 160, 3), dtype=np.uint8)
+        )
+
+        obs = process_pixel_observation(agent)
+
+        assert isinstance(obs, np.ndarray)
+        assert obs.shape == (72, 80, 1)
+        assert obs.dtype == np.uint8
+
+    def test_pixel_observation_in_space(self):
+        """Pixel observation is contained in its observation space."""
+        agent = Mock()
+        agent.get_screen_array = Mock(
+            return_value=np.random.randint(0, 255, (144, 160, 3), dtype=np.uint8)
+        )
+
+        space = create_pixel_observation_space()
+        obs = process_pixel_observation(agent)
+
+        assert space.contains(obs)
+
+
+class TestSymbolicObservation:
+    """Test symbolic observation space and processing (Treatment 2)."""
+
+    @pytest.fixture
+    def mock_agent(self):
+        """Create a mock agent with standard game state."""
+        agent = Mock()
+        agent.get_player_position = Mock(return_value={'x': 10, 'y': 20, 'map': 3})
+        agent.get_player_stats = Mock(return_value={
+            'level': 15,
+            'current_hp': 40,
+            'max_hp': 50,
+            'badges': 1,
+            'party_count': 3,
+        })
+        agent.memory = Mock()
+        return agent
+
+    def test_create_symbolic_space(self):
+        """Symbolic space is Box(29, float32, [0, 1])."""
+        space = create_symbolic_observation_space()
+
+        assert isinstance(space, gym.spaces.Box)
+        assert space.shape == (SYMBOLIC_DIM,)
+        assert space.dtype == np.float32
+        assert space.low.min() == 0.0
+        assert space.high.max() == 1.0
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_process_symbolic_observation_shape(self, mock_flags, mock_agent):
+        """process_symbolic_observation returns float32 vector of length 29."""
+        mock_flags.return_value = {f"flag_{i}": False for i in range(18)}
+
+        obs = process_symbolic_observation(
+            mock_agent,
+            episode_steps=500,
+            max_episode_steps=1000,
+            visited_locations={(1, 2, 1), (3, 4, 2)},
+        )
+
+        assert isinstance(obs, np.ndarray)
+        assert obs.shape == (SYMBOLIC_DIM,)
+        assert obs.dtype == np.float32
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_symbolic_values_normalized(self, mock_flags, mock_agent):
+        """All symbolic vector values are in [0, 1]."""
+        mock_flags.return_value = {f"flag_{i}": (i % 3 == 0) for i in range(18)}
+
+        obs = process_symbolic_observation(
+            mock_agent,
+            episode_steps=500,
+            max_episode_steps=1000,
+            visited_locations={(1, 2, 1)},
+        )
+
+        assert obs.min() >= 0.0, f"min value {obs.min()} < 0"
+        assert obs.max() <= 1.0, f"max value {obs.max()} > 1"
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_symbolic_position_encoding(self, mock_flags, mock_agent):
+        """Position fields are x/255, y/255, map/255."""
+        mock_flags.return_value = {f"flag_{i}": False for i in range(18)}
+
+        obs = process_symbolic_observation(
+            mock_agent,
+            episode_steps=0,
+            max_episode_steps=1000,
+            visited_locations=set(),
+        )
+
+        assert np.isclose(obs[0], 10 / 255.0)   # x
+        assert np.isclose(obs[1], 20 / 255.0)   # y
+        assert np.isclose(obs[2], 3 / 255.0)    # map
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_symbolic_stats_encoding(self, mock_flags, mock_agent):
+        """Stats fields are correctly normalised."""
+        mock_flags.return_value = {f"flag_{i}": False for i in range(18)}
+
+        obs = process_symbolic_observation(
+            mock_agent,
+            episode_steps=500,
+            max_episode_steps=1000,
+            visited_locations=set(),
+        )
+
+        # level=15 → 15/100
+        assert np.isclose(obs[3], 15 / 100.0)
+        # hp_ratio = 40/50 = 0.8
+        assert np.isclose(obs[4], 0.8)
+        # badges=1 → 1/255
+        assert np.isclose(obs[5], 1 / 255.0)
+        # party_count=3 → 3/6
+        assert np.isclose(obs[6], 3 / 6.0)
+        # episode_progress = 500/1000 = 0.5
+        assert np.isclose(obs[7], 0.5)
+        # badge_count=1 → 1/8
+        assert np.isclose(obs[8], 1 / 8.0)
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_symbolic_event_flags(self, mock_flags, mock_agent):
+        """Event flag bits are 0.0 or 1.0 in the vector."""
+        flags = {f"flag_{i}": (i < 5) for i in range(18)}  # first 5 set
+        mock_flags.return_value = flags
+
+        obs = process_symbolic_observation(
+            mock_agent,
+            episode_steps=0,
+            max_episode_steps=1000,
+            visited_locations=set(),
+        )
+
+        flag_start = 9  # position(3) + stats(6)
+        for i in range(18):
+            expected = 1.0 if i < 5 else 0.0
+            assert obs[flag_start + i] == expected, f"Flag {i}: expected {expected}, got {obs[flag_start + i]}"
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_symbolic_observation_in_space(self, mock_flags, mock_agent):
+        """Symbolic observation is contained in its observation space."""
+        mock_flags.return_value = {f"flag_{i}": False for i in range(18)}
+
+        space = create_symbolic_observation_space()
+        obs = process_symbolic_observation(
+            mock_agent,
+            episode_steps=500,
+            max_episode_steps=1000,
+            visited_locations={(1, 2, 1)},
+        )
+
+        assert space.contains(obs)
+
+    def test_symbolic_graceful_flag_failure(self, mock_agent):
+        """If event flag reading fails, zeros are used (no crash)."""
+        # Don't mock read_boulder_path_flags — let the import fail
+        # or the mock memory cause an exception
+        obs = process_symbolic_observation(
+            mock_agent,
+            episode_steps=0,
+            max_episode_steps=1000,
+            visited_locations=set(),
+        )
+
+        # Should still return a valid vector
+        assert obs.shape == (SYMBOLIC_DIM,)
+        # Event flag positions should be zero
+        flag_start = 9
+        for i in range(18):
+            assert obs[flag_start + i] == 0.0
+
+
+class TestHybridObservation:
+    """Test hybrid observation space and processing (Treatment 3)."""
+
+    @pytest.fixture
+    def mock_agent(self):
+        """Create a mock agent with screen + game state."""
+        agent = Mock()
+        agent.get_screen_array = Mock(
+            return_value=np.random.randint(0, 255, (144, 160, 3), dtype=np.uint8)
+        )
+        agent.get_player_position = Mock(return_value={'x': 10, 'y': 20, 'map': 3})
+        agent.get_player_stats = Mock(return_value={
+            'level': 15,
+            'current_hp': 40,
+            'max_hp': 50,
+            'badges': 1,
+            'party_count': 3,
+        })
+        agent.memory = Mock()
+        return agent
+
+    def test_create_hybrid_space_structure(self):
+        """Hybrid space is Dict with 'screen' and 'game_state' keys."""
+        space = create_hybrid_observation_space()
+
+        assert isinstance(space, gym.spaces.Dict)
+        assert "screen" in space.spaces
+        assert "game_state" in space.spaces
+
+    def test_hybrid_screen_subspace(self):
+        """Hybrid 'screen' subspace is Box(72, 80, 1, uint8)."""
+        space = create_hybrid_observation_space()
+        screen_space = space.spaces["screen"]
+
+        assert isinstance(screen_space, gym.spaces.Box)
+        assert screen_space.shape == (72, 80, 1)
+        assert screen_space.dtype == np.uint8
+
+    def test_hybrid_game_state_subspace(self):
+        """Hybrid 'game_state' subspace is Box(29, float32)."""
+        space = create_hybrid_observation_space()
+        gs_space = space.spaces["game_state"]
+
+        assert isinstance(gs_space, gym.spaces.Box)
+        assert gs_space.shape == (SYMBOLIC_DIM,)
+        assert gs_space.dtype == np.float32
+
+    def test_hybrid_custom_screen_size(self):
+        """Hybrid space respects custom screen_size."""
+        space = create_hybrid_observation_space(screen_size=(40, 36))
+        screen_space = space.spaces["screen"]
+
+        assert screen_space.shape == (36, 40, 1)
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_process_hybrid_observation_structure(self, mock_flags, mock_agent):
+        """process_hybrid_observation returns dict with both keys."""
+        mock_flags.return_value = {f"flag_{i}": False for i in range(18)}
+
+        obs = process_hybrid_observation(
+            mock_agent,
+            episode_steps=100,
+            max_episode_steps=1000,
+            visited_locations={(1, 2, 1)},
+        )
+
+        assert isinstance(obs, dict)
+        assert "screen" in obs
+        assert "game_state" in obs
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_hybrid_screen_shape(self, mock_flags, mock_agent):
+        """Hybrid screen component is (72, 80, 1) uint8."""
+        mock_flags.return_value = {f"flag_{i}": False for i in range(18)}
+
+        obs = process_hybrid_observation(
+            mock_agent,
+            episode_steps=100,
+            max_episode_steps=1000,
+            visited_locations=set(),
+        )
+
+        assert obs["screen"].shape == (72, 80, 1)
+        assert obs["screen"].dtype == np.uint8
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_hybrid_game_state_shape(self, mock_flags, mock_agent):
+        """Hybrid game_state component is (29,) float32."""
+        mock_flags.return_value = {f"flag_{i}": False for i in range(18)}
+
+        obs = process_hybrid_observation(
+            mock_agent,
+            episode_steps=100,
+            max_episode_steps=1000,
+            visited_locations=set(),
+        )
+
+        assert obs["game_state"].shape == (SYMBOLIC_DIM,)
+        assert obs["game_state"].dtype == np.float32
+
+    @patch("pokemon_red_ai.game.event_flags.read_boulder_path_flags")
+    def test_hybrid_game_state_normalized(self, mock_flags, mock_agent):
+        """Hybrid game_state values are in [0, 1]."""
+        mock_flags.return_value = {f"flag_{i}": (i % 2 == 0) for i in range(18)}
+
+        obs = process_hybrid_observation(
+            mock_agent,
+            episode_steps=500,
+            max_episode_steps=1000,
+            visited_locations={(1, 2, 1), (3, 4, 2)},
+        )
+
+        gs = obs["game_state"]
+        assert gs.min() >= 0.0
+        assert gs.max() <= 1.0
 
 
 if __name__ == '__main__':
