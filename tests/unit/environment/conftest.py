@@ -345,7 +345,7 @@ def reward_strategy(request):
     return request.param
 
 
-@pytest.fixture(params=['multi_modal', 'minimal', 'screen_only'])
+@pytest.fixture(params=['multi_modal', 'minimal', 'screen_only', 'pixel', 'symbolic', 'hybrid'])
 def observation_type(request):
     """Parameterized fixture for testing all observation types."""
     return request.param

@@ -26,6 +26,7 @@ from .models import (
     create_model,
     get_model_config,
     get_policy_kwargs_for_observation_type,
+    get_policy_type_for_observation,
     PokemonFeaturesExtractor,
     optimize_hyperparameters
 )
@@ -49,6 +50,7 @@ __all__ = [
     "create_model",
     "get_model_config",
     "get_policy_kwargs_for_observation_type",
+    "get_policy_type_for_observation",
     "PokemonFeaturesExtractor",
     "optimize_hyperparameters",
 ]

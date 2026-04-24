@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--observation-type", type=str, default="multi_modal",
-        choices=["multi_modal", "screen_only", "minimal"],
+        choices=["multi_modal", "screen_only", "minimal", "pixel", "symbolic", "hybrid"],
         help="Observation representation.",
     )
     p.add_argument(

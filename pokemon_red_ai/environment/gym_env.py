@@ -14,7 +14,15 @@ from ..game.agent import PokemonRedAgent
 from .observations import (
     create_observation_space,
     process_game_state,
-    validate_observation
+    validate_observation,
+    # Paper observation treatments
+    create_pixel_observation_space,
+    process_pixel_observation,
+    create_symbolic_observation_space,
+    process_symbolic_observation,
+    create_hybrid_observation_space,
+    process_hybrid_observation,
+    SYMBOLIC_DIM,
 )
 from .rewards import (
     create_reward_calculator,
@@ -115,6 +123,13 @@ class PokemonRedGymEnv(gym.Env):
                 shape=(screen_size[1], screen_size[0], 3),  # (H, W, C)
                 dtype=np.uint8
             )
+        # ── Paper observation treatments ────────────────────────────
+        elif observation_type == "pixel":
+            self.observation_space = create_pixel_observation_space(screen_size)
+        elif observation_type == "symbolic":
+            self.observation_space = create_symbolic_observation_space()
+        elif observation_type == "hybrid":
+            self.observation_space = create_hybrid_observation_space(screen_size)
         else:
             raise ValueError(f"Unknown observation type: {observation_type}")
 
@@ -161,6 +176,20 @@ class PokemonRedGymEnv(gym.Env):
             screen = self.game.get_screen_array()
             screen = downsample_screen(screen, self.screen_size)
             return normalize_screen(screen)
+        # ── Paper observation treatments ────────────────────────────
+        elif self.observation_type == "pixel":
+            return process_pixel_observation(self.game, self.screen_size)
+        elif self.observation_type == "symbolic":
+            return process_symbolic_observation(
+                self.game, self.episode_steps,
+                self.max_episode_steps, self.visited_locations
+            )
+        elif self.observation_type == "hybrid":
+            return process_hybrid_observation(
+                self.game, self.episode_steps,
+                self.max_episode_steps, self.visited_locations,
+                self.screen_size
+            )
 
     def _calculate_reward(self) -> float:
         """Calculate reward for current state."""
@@ -451,6 +480,16 @@ class PokemonRedGymEnv(gym.Env):
             return np.zeros(11, dtype=np.uint16)
         elif self.observation_type == "screen_only":
             return np.zeros((self.screen_size[1], self.screen_size[0], 3), dtype=np.uint8)
+        # ── Paper observation treatments ────────────────────────────
+        elif self.observation_type == "pixel":
+            return np.zeros((self.screen_size[1], self.screen_size[0], 1), dtype=np.uint8)
+        elif self.observation_type == "symbolic":
+            return np.zeros(SYMBOLIC_DIM, dtype=np.float32)
+        elif self.observation_type == "hybrid":
+            return {
+                "screen": np.zeros((self.screen_size[1], self.screen_size[0], 1), dtype=np.uint8),
+                "game_state": np.zeros(SYMBOLIC_DIM, dtype=np.float32),
+            }
 
     def get_action_meanings(self) -> list:
         """Get human-readable action meanings."""
