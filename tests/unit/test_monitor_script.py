@@ -17,11 +17,14 @@ from scripts.monitor import (
     discover_runs,
     episode_breakdown_df,
     flag_progress_df,
+    level_curve_df,
     load_dashboard_state,
     load_monitor_csv,
     load_run,
     map_heatmap_df,
+    reward_breakdown_df,
     reward_curve_df,
+    reward_summary_df,
     run_summary,
 )
 from pokemon_red_ai.game.event_flags import BOULDER_PATH_FLAGS
@@ -51,6 +54,16 @@ def run_dir(tmp_path):
             "EVENT_GOT_STARTER": 2,
             "EVENT_FOLLOWED_OAK_INTO_LAB": 1,
         },
+        # AMC-76 enhanced fields
+        "level_history": [5, 6, 8],
+        "pokemon_count_history": [1, 1, 2],
+        "money_history": [0, 500, 1200],
+        "reward_component_summary": {
+            "exploration": 12.5,
+            "badge": 100.0,
+            "time": -3.0,
+            "level": 25.0,
+        },
         "episodes": [
             {
                 "episode": 1,
@@ -63,6 +76,13 @@ def run_dir(tmp_path):
                 "event_flags_triggered": 1,
                 "locations_visited": 20,
                 "triggered_flags": ["EVENT_FOLLOWED_OAK_INTO_LAB"],
+                "player_level": 5,
+                "pokemon_count": 1,
+                "money": 0,
+                "reward_components": {
+                    "exploration": 3.0,
+                    "time": -1.0,
+                },
             },
             {
                 "episode": 2,
@@ -78,6 +98,14 @@ def run_dir(tmp_path):
                     "EVENT_FOLLOWED_OAK_INTO_LAB",
                     "EVENT_GOT_STARTER",
                 ],
+                "player_level": 6,
+                "pokemon_count": 1,
+                "money": 500,
+                "reward_components": {
+                    "exploration": 5.0,
+                    "level": 10.0,
+                    "time": -1.5,
+                },
             },
             {
                 "episode": 3,
@@ -93,6 +121,15 @@ def run_dir(tmp_path):
                     "EVENT_FOLLOWED_OAK_INTO_LAB",
                     "EVENT_GOT_STARTER",
                 ],
+                "player_level": 8,
+                "pokemon_count": 2,
+                "money": 1200,
+                "reward_components": {
+                    "exploration": 4.5,
+                    "badge": 100.0,
+                    "level": 15.0,
+                    "time": -0.5,
+                },
             },
         ],
     }
@@ -232,6 +269,149 @@ class TestDataFrameBuilders:
         assert summary["flags_triggered"] == 2
         assert summary["flags_total"] == len(BOULDER_PATH_FLAGS)
         assert summary["maps_discovered"] == 3
+        assert summary["max_level"] == 8
+        assert summary["max_pokemon"] == 2
+
+
+# ──────────────────────────────────────────────────────────────────────
+# AMC-77: New helper functions
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestLevelCurveDF:
+    def test_returns_all_columns(self, run_dir):
+        run = load_run(run_dir)
+        df = level_curve_df(run)
+        assert df is not None
+        assert list(df.columns) == ["episode", "player_level", "pokemon_count", "money"]
+        assert len(df) == 3
+
+    def test_episode_numbers_start_at_1(self, run_dir):
+        run = load_run(run_dir)
+        df = level_curve_df(run)
+        assert list(df["episode"]) == [1, 2, 3]
+
+    def test_values_match_fixture(self, run_dir):
+        run = load_run(run_dir)
+        df = level_curve_df(run)
+        assert list(df["player_level"]) == [5, 6, 8]
+        assert list(df["pokemon_count"]) == [1, 1, 2]
+        assert list(df["money"]) == [0, 500, 1200]
+
+    def test_returns_none_without_state(self, tmp_path):
+        run = load_run(tmp_path)
+        assert level_curve_df(run) is None
+
+    def test_returns_none_without_level_history(self, tmp_path):
+        """dashboard_state exists but has no level_history."""
+        (tmp_path / "dashboard_state.json").write_text(
+            json.dumps({"num_timesteps": 100, "episode_count": 1})
+        )
+        run = load_run(tmp_path)
+        assert level_curve_df(run) is None
+
+    def test_fills_zeros_when_pokemon_money_shorter(self, tmp_path):
+        """level_history is longer than pokemon/money — should pad with 0."""
+        state = {
+            "level_history": [5, 6, 7],
+            "pokemon_count_history": [1],  # shorter
+            "money_history": [],  # empty
+        }
+        (tmp_path / "dashboard_state.json").write_text(json.dumps(state))
+        run = load_run(tmp_path)
+        df = level_curve_df(run)
+        assert df is not None
+        assert len(df) == 3
+        assert list(df["pokemon_count"]) == [1, 0, 0]
+        assert list(df["money"]) == [0, 0, 0]
+
+
+class TestRewardBreakdownDF:
+    def test_returns_wide_dataframe(self, run_dir):
+        run = load_run(run_dir)
+        df = reward_breakdown_df(run)
+        assert df is not None
+        assert df.index.name == "episode"
+        # All unique components across episodes
+        assert "exploration" in df.columns
+        assert "badge" in df.columns
+        assert "time" in df.columns
+        assert "level" in df.columns
+
+    def test_rows_match_episodes(self, run_dir):
+        run = load_run(run_dir)
+        df = reward_breakdown_df(run)
+        assert list(df.index) == [1, 2, 3]
+
+    def test_fills_missing_components_with_zero(self, run_dir):
+        """Episode 1 has no 'badge' component — should be 0.0."""
+        run = load_run(run_dir)
+        df = reward_breakdown_df(run)
+        assert df.loc[1, "badge"] == 0.0
+
+    def test_values_match_fixture(self, run_dir):
+        run = load_run(run_dir)
+        df = reward_breakdown_df(run)
+        assert df.loc[3, "badge"] == pytest.approx(100.0)
+        assert df.loc[2, "level"] == pytest.approx(10.0)
+        assert df.loc[1, "exploration"] == pytest.approx(3.0)
+
+    def test_returns_none_without_state(self, tmp_path):
+        run = load_run(tmp_path)
+        assert reward_breakdown_df(run) is None
+
+    def test_returns_none_without_reward_components(self, tmp_path):
+        """Episodes exist but none have reward_components."""
+        state = {
+            "episodes": [
+                {"episode": 1, "reward": 5.0},
+                {"episode": 2, "reward": 10.0},
+            ]
+        }
+        (tmp_path / "dashboard_state.json").write_text(json.dumps(state))
+        run = load_run(tmp_path)
+        assert reward_breakdown_df(run) is None
+
+
+class TestRewardSummaryDF:
+    def test_returns_two_columns(self, run_dir):
+        run = load_run(run_dir)
+        df = reward_summary_df(run)
+        assert df is not None
+        assert list(df.columns) == ["component", "mean_value"]
+
+    def test_components_sorted_alphabetically(self, run_dir):
+        run = load_run(run_dir)
+        df = reward_summary_df(run)
+        assert list(df["component"]) == sorted(df["component"])
+
+    def test_values_match_fixture(self, run_dir):
+        run = load_run(run_dir)
+        df = reward_summary_df(run)
+        badge_row = df[df["component"] == "badge"]
+        assert badge_row["mean_value"].iloc[0] == pytest.approx(100.0)
+
+    def test_returns_none_without_state(self, tmp_path):
+        run = load_run(tmp_path)
+        assert reward_summary_df(run) is None
+
+    def test_returns_none_with_empty_summary(self, tmp_path):
+        state = {"reward_component_summary": {}}
+        (tmp_path / "dashboard_state.json").write_text(json.dumps(state))
+        run = load_run(tmp_path)
+        assert reward_summary_df(run) is None
+
+
+class TestRefreshIntervalArg:
+    def test_default_refresh_interval(self):
+        from scripts.monitor import build_parser
+        args = build_parser().parse_args([])
+        assert args.refresh_interval == 30
+
+    def test_custom_refresh_interval(self):
+        from scripts.monitor import build_parser
+        args = build_parser().parse_args(["--refresh-interval", "10"])
+        assert args.refresh_interval == 10
 
 
 # ──────────────────────────────────────────────────────────────────────
