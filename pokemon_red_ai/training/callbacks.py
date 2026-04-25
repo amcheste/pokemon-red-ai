@@ -922,6 +922,8 @@ MONITORED_INFO_KEYS: tuple = (
     "current_map",
     "unique_maps_list",
     "player_level",
+    "pokemon_count",
+    "money",
 )
 
 
@@ -991,7 +993,22 @@ class MonitoringCallback(WandbCallback):
         self._flag_first_triggered: Dict[str, int] = {}
         self._episode_rows: List[Dict[str, Any]] = []
 
+        # Per-step reward component accumulators (keyed by env index).
+        # Each value is a defaultdict(float) that accumulates per-step
+        # reward breakdown dicts over the course of an episode.  Reset
+        # when the episode ends.
+        self._reward_accumulators: Dict[int, Dict[str, float]] = {}
+
+        # Per-episode game-state histories for W&B charts
+        self._level_history: List[int] = []
+        self._pokemon_count_history: List[int] = []
+        self._money_history: List[int] = []
+        self._episode_reward_components: List[Dict[str, float]] = []
+
         os.makedirs(os.path.dirname(os.path.abspath(self.dashboard_state_path)), exist_ok=True)
+
+        # Define W&B metric grouping so panels auto-organise
+        self._define_wandb_metrics()
 
         if self.verbose >= 1:
             logger.info(
@@ -1001,20 +1018,57 @@ class MonitoringCallback(WandbCallback):
             )
 
     # ------------------------------------------------------------------
+    # W&B metric grouping
+    # ------------------------------------------------------------------
+
+    def _define_wandb_metrics(self) -> None:
+        """Set ``wandb.define_metric`` for automatic panel organisation.
+
+        Groups metrics under ``episode/``, ``game/``, and ``reward/``
+        sections so the W&B dashboard auto-creates useful panels without
+        manual configuration.  Failures are swallowed silently because
+        older wandb versions may not support ``define_metric``.
+        """
+        try:
+            w = self._wandb
+            w.define_metric("global_step")
+            # Episode scalars plotted against global_step
+            w.define_metric("episode/*", step_metric="global_step")
+            # Game-state metrics
+            w.define_metric("game/*", step_metric="global_step")
+            # Reward component breakdown
+            w.define_metric("reward/*", step_metric="global_step")
+        except Exception:
+            pass  # define_metric is best-effort
+
+    # ------------------------------------------------------------------
     # SB3 callback interface
     # ------------------------------------------------------------------
 
     def _on_step(self) -> bool:
-        """Detect episode endings and record per-episode stats."""
+        """Accumulate per-step reward components and record episodes."""
         dones = self.locals.get("dones")
         infos = self.locals.get("infos")
         if dones is None or infos is None:
             return True
 
-        for done, info in zip(dones, infos):
-            if not done:
-                continue
-            self._record_episode(info)
+        for env_idx, (done, info) in enumerate(zip(dones, infos)):
+            # Accumulate reward components every step (cheap dict adds)
+            components = info.get("reward_components")
+            if components and isinstance(components, dict):
+                if env_idx not in self._reward_accumulators:
+                    self._reward_accumulators[env_idx] = defaultdict(float)
+                for key, val in components.items():
+                    try:
+                        self._reward_accumulators[env_idx][key] += float(val)
+                    except (TypeError, ValueError):
+                        continue
+
+            if done:
+                # Snapshot the accumulated reward components for this
+                # episode, then clear the accumulator.
+                accumulated = dict(self._reward_accumulators.pop(env_idx, {}))
+                self._record_episode(info, reward_components=accumulated)
 
         return True
 
@@ -1033,7 +1087,11 @@ class MonitoringCallback(WandbCallback):
     # Episode recording
     # ------------------------------------------------------------------
 
-    def _record_episode(self, info: Dict[str, Any]) -> None:
+    def _record_episode(
+        self,
+        info: Dict[str, Any],
+        reward_components: Optional[Dict[str, float]] = None,
+    ) -> None:
         self._episode_count += 1
         self._episodes_since_screen += 1
 
@@ -1050,6 +1108,11 @@ class MonitoringCallback(WandbCallback):
         triggered_names = list(event_progress.get("triggered_names", []) or [])
         flags_triggered = int(event_progress.get("flags_triggered", len(triggered_names)))
 
+        # Game-state fields for level/money/party tracking
+        player_level = int(info.get("player_level", 0) or 0)
+        pokemon_count = int(info.get("pokemon_count", 0) or 0)
+        money = int(info.get("money", 0) or 0)
+
         # Update cumulative counts
         for map_id in unique_maps:
             try:
@@ -1060,6 +1123,13 @@ class MonitoringCallback(WandbCallback):
         for flag_name in triggered_names:
             self._flag_trigger_counts[flag_name] += 1
             self._flag_first_triggered.setdefault(flag_name, self._episode_count)
+
+        # Store game-state histories
+        self._level_history.append(player_level)
+        self._pokemon_count_history.append(pokemon_count)
+        self._money_history.append(money)
+        if reward_components:
+            self._episode_reward_components.append(reward_components)
 
         self._episode_rows.append(
             {
@@ -1073,6 +1143,10 @@ class MonitoringCallback(WandbCallback):
                 "event_flags_triggered": flags_triggered,
                 "locations_visited": locations,
                 "triggered_flags": triggered_names,
+                "player_level": player_level,
+                "pokemon_count": pokemon_count,
+                "money": money,
+                "reward_components": reward_components or {},
             }
         )
 
@@ -1135,7 +1209,7 @@ class MonitoringCallback(WandbCallback):
     # ------------------------------------------------------------------
 
     def _log_extras(self) -> None:
-        """Log heatmap, flag progress, and per-episode table to W&B."""
+        """Log heatmap, flag progress, reward breakdown, and more to W&B."""
         try:
             self._log_map_heatmap()
         except Exception as exc:
@@ -1150,6 +1224,16 @@ class MonitoringCallback(WandbCallback):
             self._log_episode_table()
         except Exception as exc:
             logger.debug(f"Episode table log failed: {exc}")
+
+        try:
+            self._log_reward_breakdown()
+        except Exception as exc:
+            logger.debug(f"Reward breakdown log failed: {exc}")
+
+        try:
+            self._log_game_state_metrics()
+        except Exception as exc:
+            logger.debug(f"Game state metrics log failed: {exc}")
 
     def _log_map_heatmap(self) -> None:
         if not self._map_visit_counts:
@@ -1240,6 +1324,9 @@ class MonitoringCallback(WandbCallback):
                 "badges",
                 "event_flags_triggered",
                 "locations_visited",
+                "player_level",
+                "pokemon_count",
+                "money",
             ]
         )
         for row in self._episode_rows[-500:]:  # cap to avoid huge payloads
@@ -1253,11 +1340,73 @@ class MonitoringCallback(WandbCallback):
                 row["badges"],
                 row["event_flags_triggered"],
                 row["locations_visited"],
+                row.get("player_level", 0),
+                row.get("pokemon_count", 0),
+                row.get("money", 0),
             )
         self._wandb.log(
             {"game/episodes": table},
             step=self.num_timesteps,
         )
+
+    # ------------------------------------------------------------------
+    # Reward breakdown & game-state logging
+    # ------------------------------------------------------------------
+
+    def _log_reward_breakdown(self) -> None:
+        """Log per-component reward scalars averaged over recent episodes.
+
+        Produces W&B scalar lines like ``reward/exploration``,
+        ``reward/badge``, ``reward/event_flags``, etc. that let
+        researchers see which components the agent is exploiting.
+        """
+        recent = self._episode_reward_components[-50:]
+        if not recent:
+            return
+
+        # Collect all component keys across recent episodes
+        all_keys: set = set()
+        for rc in recent:
+            all_keys.update(rc.keys())
+
+        metrics: Dict[str, Any] = {}
+        for key in sorted(all_keys):
+            values = [rc.get(key, 0.0) for rc in recent]
+            metrics[f"reward/{key}_mean"] = float(np.mean(values))
+            metrics[f"reward/{key}_max"] = float(np.max(values))
+
+        # Total reward from components (sanity check)
+        totals = [sum(rc.values()) for rc in recent]
+        metrics["reward/total_components_mean"] = float(np.mean(totals))
+
+        self._wandb.log(metrics, step=self.num_timesteps)
+
+    def _log_game_state_metrics(self) -> None:
+        """Log level curves, party size, and money as W&B scalars.
+
+        These provide the \"game progress\" view: is the agent levelling
+        up, catching Pokemon, and accumulating money over training?
+        """
+        metrics: Dict[str, Any] = {}
+
+        if self._level_history:
+            recent_levels = self._level_history[-50:]
+            metrics["game/player_level_mean"] = float(np.mean(recent_levels))
+            metrics["game/player_level_max"] = int(np.max(recent_levels))
+            metrics["game/player_level_latest"] = recent_levels[-1]
+
+        if self._pokemon_count_history:
+            recent_counts = self._pokemon_count_history[-50:]
+            metrics["game/pokemon_count_mean"] = float(np.mean(recent_counts))
+            metrics["game/pokemon_count_max"] = int(np.max(recent_counts))
+
+        if self._money_history:
+            recent_money = self._money_history[-50:]
+            metrics["game/money_mean"] = float(np.mean(recent_money))
+            metrics["game/money_max"] = int(np.max(recent_money))
+
+        if metrics:
+            self._wandb.log(metrics, step=self.num_timesteps)
 
     # ------------------------------------------------------------------
     # Dashboard JSON snapshot
@@ -1275,6 +1424,17 @@ class MonitoringCallback(WandbCallback):
             flag_names = list(BOULDER_PATH_FLAGS)
         except Exception:
             flag_names = list(self._flag_trigger_counts)
+
+        # Aggregate recent reward components for the dashboard
+        recent_rc = self._episode_reward_components[-50:]
+        rc_summary: Dict[str, float] = {}
+        if recent_rc:
+            all_keys: set = set()
+            for rc in recent_rc:
+                all_keys.update(rc.keys())
+            for key in sorted(all_keys):
+                vals = [rc.get(key, 0.0) for rc in recent_rc]
+                rc_summary[key] = float(np.mean(vals))
 
         snapshot = {
             "num_timesteps": int(self.num_timesteps),
@@ -1294,6 +1454,11 @@ class MonitoringCallback(WandbCallback):
                 for name in flag_names
             },
             "episodes": self._episode_rows[-200:],
+            # Enhanced metrics
+            "level_history": self._level_history[-200:],
+            "pokemon_count_history": self._pokemon_count_history[-200:],
+            "money_history": self._money_history[-200:],
+            "reward_component_summary": rc_summary,
         }
 
         try:
