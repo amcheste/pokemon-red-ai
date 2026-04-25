@@ -30,6 +30,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Add project root to path so ``pokemon_red_ai`` is importable when
 # running the script directly (outside of ``pip install -e .``).
@@ -51,6 +52,13 @@ from pokemon_red_ai.training.callbacks import (
     TrainingCallback,
     MonitoringCallback,
     MONITORED_INFO_KEYS,
+)
+from pokemon_red_ai.training.alerts import (
+    TrainingAlertCallback,
+    DesktopChannel,
+    SlackChannel,
+    load_alert_config,
+    channels_from_config,
 )
 from pokemon_red_ai.utils import create_directories
 
@@ -160,6 +168,36 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--screen-capture-freq", type=int, default=10,
         help="Episodes between game-screen captures logged to W&B. 0 disables.",
+    )
+
+    # ── Alerts (AMC-78) ──────────────────────────────────────────────
+    p.add_argument(
+        "--enable-alerts", action="store_true",
+        help="Enable training milestone alerts (badges, plateaus, "
+             "checkpoints).  See --alerts-config for full configuration.",
+    )
+    p.add_argument(
+        "--alerts-config", type=str, default=None,
+        help="Path to a YAML/JSON alerts config file.  Overrides any "
+             "channel-specific CLI flags.",
+    )
+    p.add_argument(
+        "--alerts-desktop", action="store_true",
+        help="Enable desktop notifications (macOS osascript).",
+    )
+    p.add_argument(
+        "--alerts-slack-webhook", type=str, default=None,
+        help="Slack incoming webhook URL.  Falls back to "
+             "$SLACK_WEBHOOK_URL.",
+    )
+    p.add_argument(
+        "--alerts-plateau-episodes", type=int, default=50,
+        help="Episodes without best-reward improvement before plateau "
+             "alert fires.",
+    )
+    p.add_argument(
+        "--alerts-checkpoint-freq", type=int, default=100_000,
+        help="Timesteps between checkpoint alerts (0 to disable).",
     )
 
     # ── Misc ─────────────────────────────────────────────────────────
@@ -350,6 +388,11 @@ def train(args: argparse.Namespace) -> None:
             )
         )
 
+    # ── Alerts (AMC-78) ─────────────────────────────────────────────
+    alert_callback = _build_alert_callback(args)
+    if alert_callback is not None:
+        callbacks.append(alert_callback)
+
     callback_list = CallbackList(callbacks)
 
     # ── Train ────────────────────────────────────────────────────────
@@ -401,11 +444,92 @@ def train(args: argparse.Namespace) -> None:
         model.save(interrupted_path)
         logger.info(f"Interrupted model saved: {interrupted_path}")
 
+    except Exception as exc:
+        logger.exception("Training crashed with unhandled exception")
+        if alert_callback is not None:
+            try:
+                alert_callback.notify_crash(exc)
+            except Exception:
+                logger.warning("Failed to dispatch crash alert")
+        raise
+
     finally:
         env.close()
         if wandb_run is not None:
             wandb_run.finish()
             logger.info("W&B run finished")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Alert callback wiring
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _build_alert_callback(
+    args: argparse.Namespace,
+) -> Optional[TrainingAlertCallback]:
+    """Construct a :class:`TrainingAlertCallback` from CLI args.
+
+    Returns ``None`` when alerts are not enabled.  Honors:
+
+    * ``--alerts-config`` — full config file (YAML or JSON), wins over
+      individual channel flags.
+    * ``--alerts-desktop`` — adds :class:`DesktopChannel`.
+    * ``--alerts-slack-webhook`` — adds :class:`SlackChannel`.
+
+    The callback always includes :class:`LogChannel` automatically.
+    """
+    if not (args.enable_alerts or args.alerts_config or args.alerts_desktop
+            or args.alerts_slack_webhook):
+        return None
+
+    channels = []
+
+    if args.alerts_config:
+        try:
+            cfg = load_alert_config(args.alerts_config)
+            channels.extend(channels_from_config(cfg))
+            triggers = cfg.get("triggers", {}) or {}
+            plateau_episodes = int(
+                triggers.get("plateau_episodes", args.alerts_plateau_episodes)
+            )
+            checkpoint_freq = int(
+                triggers.get("checkpoint_alert_freq", args.alerts_checkpoint_freq)
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Failed to load --alerts-config {args.alerts_config}: {exc}. "
+                f"Falling back to CLI flags."
+            )
+            plateau_episodes = args.alerts_plateau_episodes
+            checkpoint_freq = args.alerts_checkpoint_freq
+    else:
+        plateau_episodes = args.alerts_plateau_episodes
+        checkpoint_freq = args.alerts_checkpoint_freq
+
+    if args.alerts_desktop:
+        channels.append(DesktopChannel())
+    if args.alerts_slack_webhook:
+        slack = SlackChannel(webhook_url=args.alerts_slack_webhook)
+        if slack.is_configured():
+            channels.append(slack)
+        else:
+            logger.warning(
+                "--alerts-slack-webhook set but webhook URL is empty; "
+                "skipping Slack channel."
+            )
+
+    callback = TrainingAlertCallback(
+        channels=channels,
+        plateau_episodes=plateau_episodes,
+        checkpoint_alert_freq=checkpoint_freq,
+        verbose=1,
+    )
+    logger.info(
+        f"Alerts enabled — channels: "
+        f"{[type(c).__name__ for c in callback.channels]}"
+    )
+    return callback
 
 
 # ──────────────────────────────────────────────────────────────────────

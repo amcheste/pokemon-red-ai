@@ -19,6 +19,19 @@ from .callbacks import (
     MONITORED_INFO_KEYS,
 )
 
+# Alerting (AMC-78)
+from .alerts import (
+    Alert,
+    AlertChannel,
+    LogChannel,
+    DesktopChannel,
+    SlackChannel,
+    EmailChannel,
+    TrainingAlertCallback,
+    load_alert_config,
+    channels_from_config,
+)
+
 # Model creation utilities
 from .models import (
     create_ppo_model,
@@ -45,6 +58,17 @@ __all__ = [
     "WandbCallback",
     "MonitoringCallback",
     "MONITORED_INFO_KEYS",
+
+    # Alerting (AMC-78)
+    "Alert",
+    "AlertChannel",
+    "LogChannel",
+    "DesktopChannel",
+    "SlackChannel",
+    "EmailChannel",
+    "TrainingAlertCallback",
+    "load_alert_config",
+    "channels_from_config",
 
     # Model creation
     "create_ppo_model",
