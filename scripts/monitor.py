@@ -293,6 +293,78 @@ def episode_breakdown_df(run: RunData) -> Optional[pd.DataFrame]:
     return df
 
 
+def level_curve_df(run: RunData) -> Optional[pd.DataFrame]:
+    """Return a DataFrame with per-episode player level, pokemon count, money."""
+    state = run.dashboard_state
+    if not state:
+        return None
+
+    levels = state.get("level_history") or []
+    pokemon = state.get("pokemon_count_history") or []
+    money = state.get("money_history") or []
+
+    if not levels:
+        return None
+
+    n = len(levels)
+    # Pad shorter lists with zeros so all columns are length n.
+    pokemon_padded = (pokemon[:n] + [0] * n)[:n]
+    money_padded = (money[:n] + [0] * n)[:n]
+    df = pd.DataFrame({
+        "episode": list(range(1, n + 1)),
+        "player_level": levels,
+        "pokemon_count": pokemon_padded,
+        "money": money_padded,
+    })
+    return df
+
+
+def reward_breakdown_df(run: RunData) -> Optional[pd.DataFrame]:
+    """Return per-episode reward component breakdown.
+
+    Extracts ``reward_components`` from each episode row in the
+    dashboard state, producing a wide DataFrame where each column
+    is a reward component (exploration, badge, time, etc.).
+    """
+    state = run.dashboard_state
+    if not state:
+        return None
+
+    episodes = state.get("episodes") or []
+    if not episodes:
+        return None
+
+    rows = []
+    for ep in episodes:
+        rc = ep.get("reward_components")
+        if not rc:
+            continue
+        row = {"episode": ep.get("episode", 0), **rc}
+        rows.append(row)
+
+    if not rows:
+        return None
+
+    df = pd.DataFrame(rows).set_index("episode").fillna(0.0)
+    return df
+
+
+def reward_summary_df(run: RunData) -> Optional[pd.DataFrame]:
+    """Return the aggregate reward component summary."""
+    state = run.dashboard_state
+    if not state:
+        return None
+
+    summary = state.get("reward_component_summary") or {}
+    if not summary:
+        return None
+
+    df = pd.DataFrame(
+        [{"component": k, "mean_value": v} for k, v in sorted(summary.items())],
+    )
+    return df
+
+
 def run_summary(run: RunData) -> Dict[str, Any]:
     """Return a small dict of headline metrics for the sidebar."""
     summary: Dict[str, Any] = {
@@ -309,6 +381,13 @@ def run_summary(run: RunData) -> Dict[str, Any]:
     heatmap = map_heatmap_df(run)
     summary["maps_discovered"] = 0 if heatmap is None else len(heatmap)
 
+    # AMC-77: level and party info
+    state = run.dashboard_state or {}
+    levels = state.get("level_history") or []
+    summary["max_level"] = max(levels) if levels else 0
+    pokemon = state.get("pokemon_count_history") or []
+    summary["max_pokemon"] = max(pokemon) if pokemon else 0
+
     return summary
 
 
@@ -324,6 +403,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default="./training_output",
         help="Root directory of training runs (or a single --save-dir).",
+    )
+    p.add_argument(
+        "--refresh-interval",
+        type=int,
+        default=30,
+        help="Auto-refresh interval in seconds (0 = manual only).",
     )
     return p
 
@@ -343,17 +428,20 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     import streamlit as st  # imported here so tests don't need streamlit
+    import time as _time
 
     args = _parse_args()
+    refresh_interval = int(args.refresh_interval)
 
     st.set_page_config(
         page_title="Pokemon Red RL — Training Monitor",
         layout="wide",
+        initial_sidebar_state="expanded",
     )
     st.title("Pokemon Red RL — Training Monitor")
     st.caption(
-        "Live view of training runs — reward curves, map exploration, "
-        "and the 18 Boulder-Path event flags."
+        "Live view of training runs — reward curves, game progress, "
+        "reward breakdowns, and the 18 Boulder-Path event flags."
     )
 
     runs_root = Path(args.runs_dir).expanduser().resolve()
@@ -367,6 +455,7 @@ def main() -> None:
         )
         return
 
+    # ── Sidebar ──────────────────────────────────────────────────────
     with st.sidebar:
         st.header("Runs")
         st.write(f"Root: `{runs_root}`")
@@ -383,7 +472,21 @@ def main() -> None:
             "(e.g. different seeds)."
         )
 
-        refresh = st.button("Refresh data")
+        st.divider()
+        st.subheader("Refresh")
+        auto_refresh = st.toggle(
+            "Auto-refresh",
+            value=refresh_interval > 0,
+            help="Reload data periodically while training runs.",
+        )
+        interval = st.slider(
+            "Interval (seconds)",
+            min_value=5, max_value=120,
+            value=max(5, refresh_interval),
+            disabled=not auto_refresh,
+        )
+
+        refresh = st.button("Refresh now")
         if refresh:
             st.rerun()
 
@@ -403,14 +506,17 @@ def main() -> None:
         with col:
             st.metric(label=run.name, value=f"{summary['episodes']} episodes")
             st.write(f"**Steps:** {summary['steps']:,}")
+            best = summary["best_reward"]
             st.write(
                 f"**Best reward:** "
-                f"{'—' if summary['best_reward'] is None else f'{summary["best_reward"]:.1f}'}"
+                + ("—" if best is None else f"{best:.1f}")
             )
             st.write(
                 f"**Flags:** {summary['flags_triggered']}/{summary['flags_total']}"
             )
             st.write(f"**Maps:** {summary['maps_discovered']}")
+            st.write(f"**Level:** {summary['max_level']}")
+            st.write(f"**Party:** {summary['max_pokemon']}")
 
     # ── Reward curves ────────────────────────────────────────────────
     st.subheader("Episode reward")
@@ -425,6 +531,75 @@ def main() -> None:
         st.line_chart(chart_df, height=320)
     else:
         st.caption("No monitor.csv found for any selected run.")
+
+    # ── Game progress (level, party, money) ──────────────────────────
+    st.subheader("Game progress")
+    progress_tabs = st.tabs(["Player level", "Party size", "Money"])
+
+    with progress_tabs[0]:
+        level_series = {}
+        for run in selected_runs:
+            df = level_curve_df(run)
+            if df is not None:
+                level_series[run.name] = df.set_index("episode")["player_level"]
+        if level_series:
+            st.line_chart(pd.concat(level_series, axis=1), height=280)
+        else:
+            st.caption("No level data yet. Requires AMC-76 enhanced logging.")
+
+    with progress_tabs[1]:
+        party_series = {}
+        for run in selected_runs:
+            df = level_curve_df(run)
+            if df is not None:
+                party_series[run.name] = df.set_index("episode")["pokemon_count"]
+        if party_series:
+            st.line_chart(pd.concat(party_series, axis=1), height=280)
+        else:
+            st.caption("No party data yet.")
+
+    with progress_tabs[2]:
+        money_series = {}
+        for run in selected_runs:
+            df = level_curve_df(run)
+            if df is not None:
+                money_series[run.name] = df.set_index("episode")["money"]
+        if money_series:
+            st.line_chart(pd.concat(money_series, axis=1), height=280)
+        else:
+            st.caption("No money data yet.")
+
+    # ── Reward component breakdown ───────────────────────────────────
+    st.subheader("Reward component breakdown")
+    breakdown_tabs = st.tabs(["Summary", "Per-episode"])
+
+    with breakdown_tabs[0]:
+        summary_cols = st.columns(len(selected_runs))
+        for col, run in zip(summary_cols, selected_runs):
+            with col:
+                st.caption(run.name)
+                rsum = reward_summary_df(run)
+                if rsum is None:
+                    st.write("No reward breakdown yet.")
+                else:
+                    st.bar_chart(
+                        rsum.set_index("component")["mean_value"],
+                        height=280,
+                    )
+                    st.dataframe(rsum, use_container_width=True, hide_index=True)
+
+    with breakdown_tabs[1]:
+        for run in selected_runs:
+            rbd = reward_breakdown_df(run)
+            if rbd is None:
+                continue
+            with st.expander(f"{run.name} — reward components over episodes", expanded=True):
+                # Show the major components as area chart
+                # Filter out tiny components for readability
+                col_sums = rbd.abs().sum().sort_values(ascending=False)
+                top_cols = col_sums.head(6).index.tolist()
+                if top_cols:
+                    st.area_chart(rbd[top_cols], height=300)
 
     # ── Map exploration ──────────────────────────────────────────────
     st.subheader("Map exploration")
@@ -486,8 +661,13 @@ def main() -> None:
 
     st.caption(
         "Is this run worth continuing? Look for: rising reward curve, "
-        "new maps appearing, and flags ticking on in order."
+        "new maps appearing, flags ticking on in order, and level going up."
     )
+
+    # ── Auto-refresh ─────────────────────────────────────────────────
+    if auto_refresh and interval > 0:
+        _time.sleep(interval)
+        st.rerun()
 
 
 if __name__ == "__main__":
