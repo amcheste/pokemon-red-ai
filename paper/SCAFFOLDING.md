@@ -11,7 +11,9 @@ or interpretation needs to land.
 paper/
 ├── main.tex                   # Top-level document, includes sections
 ├── references.bib             # Bibliography (sorted alphabetically)
-├── Makefile                   # `make pdf` to build, `make watch` for live
+
+├── Makefile                   # `make pdf` to build
+
 ├── analysis_plan.md           # Pre-registered hypotheses (existing)
 ├── compute_ledger.md          # Per-run compute log (existing)
 ├── figures/                   # Output dir for scripts/analyze.py
