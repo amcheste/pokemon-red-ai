@@ -16,15 +16,25 @@ Welcome to the Pokemon Red AI developer guide! This document provides comprehens
 
 ## 🎯 Project Overview
 
-Pokemon Red AI is a comprehensive reinforcement learning toolkit for training AI agents to play Pokemon Red using PyBoy emulation. The project follows a modular, layered architecture that separates concerns and provides clean interfaces between components.
+Pokemon Red AI is the research codebase backing a 3-paper cascade
+(EWRL 2026 → NeurIPS 2026 workshop → TMLR) on observation
+representations in long-horizon, sparse-reward reinforcement learning.
+It pairs a Gymnasium-compatible environment over PyBoy with a
+training pipeline (RecurrentPPO + W&B + alerts), a statistical
+analysis layer (rliable bootstrap CIs), and live monitoring
+dashboards (Streamlit).
+
+The codebase is also fully usable as a generic Pokémon Red RL toolkit
+— most of the research apparatus is opt-in.
 
 ### Key Design Principles
 
 1. **Modularity**: Each component has a single responsibility and well-defined interfaces
 2. **Flexibility**: Multiple reward strategies, observation types, and training algorithms
 3. **Robustness**: Comprehensive error handling and fallback mechanisms
-4. **Testability**: Extensive unit and integration tests with mocking
-5. **Extensibility**: Easy to add new features without breaking existing functionality
+4. **Testability**: Extensive unit and integration tests (833 passing)
+5. **Reproducibility**: Pre-registered analysis plan, locked event-flag set, deterministic eval
+6. **Extensibility**: Easy to add new features without breaking existing functionality
 
 ## 🏗️ Architecture Overview
 
@@ -84,30 +94,55 @@ graph TB
 ### Directory Structure
 
 ```
-pokemon_red_ai/
-├── cli/                    # Command-line interface
-│   ├── commands.py         # Click-based CLI commands
+pokemon_red_ai/                     # Python package — library + CLI
+├── analysis/                       # Treatment comparison + plotting
+│   ├── comparison.py               # rliable IQM, learning curves, plots
 │   └── __init__.py
-├── environment/            # RL environment components
-│   ├── gym_env.py         # Gymnasium environment wrapper
-│   ├── rewards.py         # Reward calculation strategies
-│   ├── observations.py    # Observation processing
+├── cli/                            # Click-based CLI (`pokemon-ai`)
+│   ├── commands.py
 │   └── __init__.py
-├── game/                   # Game interface components
-│   ├── agent.py           # Main Pokemon Red agent
-│   ├── controls.py        # Input controls and screen detection
-│   ├── memory.py          # Memory addresses and state reading
+├── environment/                    # RL environment components
+│   ├── gym_env.py                  # Gymnasium env wrapper
+│   ├── rewards.py                  # Reward calculation strategies
+│   ├── observations.py             # 6 observation treatments
 │   └── __init__.py
-├── training/              # Training infrastructure
-│   ├── trainer.py         # Main trainer orchestration
-│   ├── callbacks.py       # Training callbacks and monitoring
-│   ├── models.py          # Model creation utilities
+├── game/                           # PyBoy interface layer
+│   ├── agent.py                    # PokemonRedAgent (emulator wrapper)
+│   ├── controls.py                 # Input + screen-state detection
+│   ├── memory.py                   # RAM address constants + readers
+│   ├── event_flags.py              # 18 pre-registered event flags
 │   └── __init__.py
-├── utils/                 # Utility functions
-│   ├── config.py          # Configuration management
-│   ├── file_utils.py      # File operations and utilities
+├── training/                       # Training infrastructure
+│   ├── trainer.py                  # PokemonTrainer orchestration
+│   ├── callbacks.py                # SB3 callbacks (W&B, monitoring)
+│   ├── alerts.py                   # Desktop / Slack / email alerts
+│   ├── models.py                   # Model + feature extractor factories
 │   └── __init__.py
-└── __init__.py            # Package initialization
+├── utils/                          # Configuration + file helpers
+└── __init__.py
+
+scripts/                            # Top-level entry points (not in package)
+├── train.py                        # Primary training entry (used by run_pilots.sh)
+├── eval.py                         # Deterministic evaluation harness
+├── analyze.py                      # rliable analysis → publication figures
+├── compare.py                      # Streamlit treatment comparison
+├── monitor.py                      # Streamlit single-run dashboard
+├── run_pilots.sh                   # Launch the canonical 9-pilot grid
+├── mirror_paper_to_overleaf.sh     # Mirror paper/ → Overleaf
+└── create_save_states.py           # One-time save state generation
+
+paper/                              # Research artifacts
+├── analysis_plan.md                # Pre-registered hypotheses + protocol
+├── compute_ledger.md               # Per-run compute log
+├── main.tex + sections/            # EWRL paper LaTeX source
+├── references.bib
+├── Makefile
+└── figures/                        # Output of scripts/analyze.py
+
+bin/setup-overleaf-project.sh       # One-shot Overleaf provisioning
+configs/                            # Sample alert + report configs
+docs/research_playbook.md           # Operational runbook
+tests/                              # 833 unit + integration tests
 ```
 
 ## 🔧 Core Components
@@ -302,6 +337,97 @@ Rich command-line interface using Click and Rich libraries.
 - `config`: Configuration management
 - `init`: Initialize new projects
 - `doctor`: System health checks
+
+## 🔬 Research Apparatus
+
+The components below are layered on top of the core RL toolkit and
+power the paper-grade workflow.  They're opt-in — none are required to
+train an agent.
+
+### Analysis layer (`pokemon_red_ai.analysis`)
+
+`analysis/comparison.py` is the shared backend for treatment-level
+statistical comparisons.  Pure functions, no UI dependency:
+
+```python
+from pokemon_red_ai.analysis.comparison import (
+    detect_treatment, group_runs_by_treatment,
+    learning_curves_with_bands, treatment_summary_table,
+    milestone_first_episode, final_performance,
+    plot_learning_curves, export_figure,
+)
+```
+
+- **`treatment_summary_table(runs, n_boot=2000)`** — IQM with 95%
+  percentile-bootstrap CI per treatment.  Pure-numpy implementation,
+  mathematically equivalent to `rliable`'s stratified bootstrap but
+  without that runtime dependency.
+- **`learning_curves_with_bands(runs)`** — per-treatment mean ± std
+  curves, aligned to the shortest seed, smoothable.
+- **`milestone_first_episode(runs)`** — for each pre-registered event
+  flag, the median (or min / mean) episode at which each treatment
+  first triggered it.
+
+`scripts/analyze.py` produces final paper figures using the same data
+flow.  See [`paper/analysis_plan.md`](paper/analysis_plan.md) §6 for
+the locked statistical methodology.
+
+### Live monitoring callbacks (`pokemon_red_ai.training.callbacks`)
+
+| Callback | Role |
+|----------|------|
+| `TrainingCallback` | Baseline checkpoint + log writer |
+| `WandbCallback` | Streams scalars and tables to Weights & Biases |
+| `MonitoringCallback` | Extends `WandbCallback` with map heatmaps, event-flag tracking, screen captures, and `dashboard_state.json` snapshot for the local Streamlit dashboard |
+
+The `MONITORED_INFO_KEYS` tuple is the contract between the env's
+`info` dict and the SB3 `Monitor` wrapper's `info_keywords` argument —
+adding a metric requires updating that tuple in lockstep with the env.
+
+### Alerting (`pokemon_red_ai.training.alerts`)
+
+`TrainingAlertCallback` plus four pluggable channels (`LogChannel`,
+`DesktopChannel`, `SlackChannel`, `EmailChannel`).  Triggers cover
+first badge / new max badge / new map / new event flag / reward
+plateau / checkpoint / crash.  Per-key cooldown prevents spam.  YAML
+config loader at `configs/alerts.example.yaml`.
+
+```python
+from pokemon_red_ai.training.alerts import (
+    TrainingAlertCallback, DesktopChannel, SlackChannel,
+    load_alert_config, channels_from_config,
+)
+cfg = load_alert_config("configs/alerts.yaml")
+callback = TrainingAlertCallback(channels=channels_from_config(cfg))
+```
+
+### Streamlit dashboards
+
+- **`scripts/monitor.py`** — single-run dashboard.  Reads
+  `dashboard_state.json` + the SB3 `monitor.csv`.  Auto-refresh.
+- **`scripts/compare.py`** — multi-run treatment comparison.  Auto-
+  groups by treatment from run names, renders learning curves, IQM
+  tables, milestone race, with PDF/SVG/PNG export buttons for figures.
+
+Both are pure-Streamlit; the data helpers underneath are unit-tested
+in `tests/unit/test_monitor_script.py` and
+`tests/unit/analysis/test_comparison.py`.
+
+### Pilot grid launcher (`scripts/run_pilots.sh`)
+
+Wraps `scripts/train.py` for the canonical 9-pilot grid (3 treatments
+× 3 seeds × 10M steps).  Handles consistent save-dir / W&B-run-name
+paths, `caffeinate` on macOS, batched parallelism (`--parallel N`),
+skip-completed detection, and a final summary.  See `--help` for all
+options.
+
+### Overleaf integration
+
+The paper LaTeX in `paper/` is canonical.  `bin/setup-overleaf-project.sh`
+provisions the Overleaf side from a project ID + token in one
+command;  `scripts/mirror_paper_to_overleaf.sh` keeps git → Overleaf
+in sync.  Both depend on the
+[overleaf-mcp-server](https://github.com/amcheste/overleaf-mcp).
 
 ## 🎨 Design Patterns
 
