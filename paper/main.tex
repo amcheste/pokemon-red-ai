@@ -1,0 +1,98 @@
+% Pokemon Red RL — EWRL 2026 paper draft
+%
+% Working title: "Symbols or Pixels? A Controlled Study of Observation
+% Representations in Long-Horizon Reinforcement Learning"
+%
+% Build:    cd paper && make pdf
+% Sections: paper/sections/0[1-6]_*.tex
+% References: paper/references.bib
+%
+% NOTE: this uses a generic article class.  When the EWRL 2026 LaTeX
+% template is published (typically 4-6 weeks before the deadline), swap
+% \documentclass and any venue-specific commands.  Section content is
+% template-agnostic.
+
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+% microtype gives slightly tighter typesetting but requires font-expansion
+% support that the TeX Live "basic" scheme doesn't always ship.  Use
+% protrusion-only mode so it works on minimal TeX installs.
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{natbib}
+
+% Lightweight cleveref-like macro: \Cref expands to "Section~\ref{...}"
+% etc. Avoids the cleveref package which isn't in TeX Live basic.
+\newcommand{\Cref}[1]{Section~\ref{#1}}
+\newcommand{\cref}[1]{\Cref{#1}}
+
+% ── Layout & style ────────────────────────────────────────────────────
+\setlength{\parskip}{4pt}
+\renewcommand{\baselinestretch}{1.05}
+
+% Annotation macro for results-section placeholders.  Search for "TODO"
+% to find every spot the pilot data needs to land.
+\newcommand{\todopilot}[1]{\textcolor{red}{[TODO(pilots): #1]}}
+
+% ── Title block ───────────────────────────────────────────────────────
+\title{%
+  Symbols or Pixels? \\
+  \Large A Controlled Study of Observation Representations in Long-Horizon
+  Reinforcement Learning
+}
+\author{%
+  Alan Chester\thanks{CAM Labs LLC. Correspondence:
+    \href{mailto:amcheste@gmail.com}{amcheste@gmail.com}}
+}
+\date{%
+  EWRL 2026 submission \\[2pt]
+  \small\today
+}
+
+\begin{document}
+
+\maketitle
+
+% ── Abstract ──────────────────────────────────────────────────────────
+\begin{abstract}
+We present a controlled empirical study of observation representations
+for reinforcement-learning agents in a long-horizon, sparse-reward game
+environment.  Using \emph{Pokémon Red} as a benchmark with the Boulder
+Badge as the primary milestone, we compare three observation
+treatments---\emph{pixel} (raw downsampled screen), \emph{symbolic}
+(structured game state read from RAM), and \emph{hybrid} (both
+streams)---under matched architecture, reward, and compute.
+%
+We train RecurrentPPO agents for 10M environment steps across three
+seeds per treatment and report aggregate metrics with 95\% bootstrap
+confidence intervals using \texttt{rliable}.
+%
+\todopilot{Insert one-sentence headline result: which treatment wins
+sample efficiency, by how much, and whether the CI excludes the others.}
+%
+We release \textsc{PokeGym}, a Gymnasium-compatible benchmark, and the
+full training and analysis pipeline under an open license to support
+follow-up work.
+\end{abstract}
+
+% ── Body ──────────────────────────────────────────────────────────────
+\input{sections/01_introduction}
+\input{sections/02_related_work}
+\input{sections/03_environment}
+\input{sections/04_methods}
+\input{sections/05_results}
+\input{sections/06_discussion}
+
+% ── References ────────────────────────────────────────────────────────
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

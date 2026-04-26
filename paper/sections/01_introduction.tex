@@ -1,0 +1,87 @@
+\section{Introduction}
+\label{sec:intro}
+
+Deep reinforcement-learning agents are typically benchmarked on
+short-horizon tasks with rich, dense reward signals---most commonly the
+Atari Learning Environment~\citep{bellemare2013arcade,mnih2015atari}
+and procedurally-generated grid worlds~\citep{cobbe2020procgen,
+matthews2024craftax,samvelyan2021minihack}.  These environments stress
+exploration, sample efficiency, and generalisation, but few of them
+require an agent to maintain coherent intent across the millions of
+steps that real long-horizon games---role-playing games, strategy
+games, or open-world games---demand.
+
+\emph{Pok\'emon Red}, a 1996 Game Boy role-playing game, sits at an
+unusually informative point in the difficulty landscape.  Its
+state-action space is small enough to render with a Game Boy emulator
+at thousands of frames per second on consumer hardware, but the game
+contains long causal chains (deliver Oak's parcel before exiting Viridian;
+beat Brock with a fire- or water-resistant team; navigate Mt. Moon
+without losing the run) that punish agents which lack temporal
+abstraction.  The 18 event flags between the player's bedroom and the
+Boulder Badge encode the kind of structured progress that the dense
+reward proxies of Atari obscure.
+
+In this work we use Pok\'emon Red as a controlled test bed for one
+specific question: \textbf{how does the choice of observation
+representation affect what a long-horizon RL agent can learn?}  We
+compare three treatments under matched architecture, reward, and
+compute:
+%
+\begin{itemize}
+\item \textbf{Pixel} --- the standard $80 \times 72$ grayscale screen
+  observation, encoded with a Nature-DQN-style
+  CNN~\citep{mnih2015atari}.
+\item \textbf{Symbolic} --- a structured vector read directly from the
+  emulator RAM, containing the local tile map, the 18 pre-registered
+  event flags, party stats, and player coordinates, encoded with an
+  MLP.
+\item \textbf{Hybrid} --- both streams concatenated at the recurrent
+  layer.
+\end{itemize}
+%
+All three feed into a single LSTM and a PPO actor-critic
+head~\citep{schulman2017ppo,hausknecht2015drqn}, with the same
+event-flag-based reward function.  Differences in performance are
+attributable to the observation representation alone.
+
+\paragraph{Contributions.}
+The contributions of this preliminary study, intended to seed a longer
+journal-length follow-up, are:
+\begin{enumerate}
+\item \textbf{An open benchmark.}  We release \textsc{PokeGym}, a
+  Gymnasium-compatible~\citep{gymnasium} environment for Pok\'emon Red
+  with three first-class observation treatments, an event-flag reward
+  calculator, and a curriculum-aware save-state system.  The
+  environment runs headlessly at $\sim$\todopilot{N}~steps/s/CPU on a
+  consumer laptop.
+\item \textbf{A pre-registered analysis plan.}  Hypotheses, primary
+  metric (Boulder Badge win-rate), seed counts, statistical tests
+  (\texttt{rliable} stratified bootstrap with 95\% CIs), and stopping
+  rules were committed to version control before the main experiments
+  ran.\footnote{See \texttt{paper/analysis\_plan.md} in the open
+    repository.}
+\item \textbf{Empirical comparison of three observation treatments at
+  10M~environment steps each, three seeds per treatment.}
+  \todopilot{Replace this bullet once results are in: 1-2 sentences on
+    the dominant treatment and the magnitude of the gap, with the
+    bootstrap CI.}
+\end{enumerate}
+
+\paragraph{Scope.}
+The pilot results reported here use 10M environment steps per seed and
+three seeds per treatment.  We treat them as preliminary evidence
+rather than a final ranking---both the seed count and the training
+budget will be substantially expanded in subsequent journal-length
+work, as committed in the pre-registered plan.
+
+The remainder of the paper is organised as follows.
+\Cref{sec:related-work} situates the work in the long-horizon-RL,
+representation-learning, and Pok\'emon-RL literatures.
+\Cref{sec:environment} describes \textsc{PokeGym} and the three
+observation treatments in detail.  \Cref{sec:methods} fixes the
+training pipeline, statistical methodology, and pre-registered
+deviations.  \Cref{sec:results} presents pilot learning curves,
+aggregate metrics, and milestone progression.  \Cref{sec:discussion}
+discusses what the pilot can and cannot conclude, and outlines the
+follow-up experiments planned for the journal version.

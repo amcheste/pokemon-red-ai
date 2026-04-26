@@ -1,0 +1,16 @@
+# LaTeX build artefacts — produced by `make pdf`
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+sections/*.aux
+
+# The compiled PDF — rebuild on demand via `make pdf`.
+# Comment this line out if you want to track PDF revisions in git
+# (e.g. for arXiv submission, pin a specific PDF as `main_v1.pdf`).
+main.pdf

@@ -1,0 +1,125 @@
+\section{Results}
+\label{sec:results}
+
+% NOTE: This section is a structural skeleton.  Every \todopilot{...}
+% marker is a place where pilot data needs to be inserted once the
+% nine training runs finish.  See docs/research_playbook.md for the
+% commands that produce these data; figures live in paper/figures/.
+
+\subsection{Setup recap}
+
+Three observation treatments---\emph{pixel}, \emph{symbolic},
+\emph{hybrid}---trained for $10^7$ environment steps each, three seeds
+per treatment, identical hyperparameters
+(\Cref{sec:hyperparameters}).  All other components of the training
+pipeline are matched (\Cref{sec:methods}).
+
+\subsection{Learning Curves}
+\label{sec:results-curves}
+
+\begin{figure}[t]
+\centering
+% Produced by scripts/analyze.py and scripts/compare.py
+% \includegraphics[width=0.85\linewidth]{figures/learning_curves.pdf}
+\caption{%
+  \todopilot{Learning curves: per-episode total reward smoothed with a
+    20-episode rolling mean, with mean ($\pm$ std) bands across the
+    three seeds for each treatment.  Replace this caption with one or
+    two sentences describing the qualitative shape: which treatment
+    rises fastest, which plateaus, whether bands overlap.}
+}
+\label{fig:learning-curves}
+\end{figure}
+
+\todopilot{Insert one paragraph describing \Cref{fig:learning-curves}
+qualitatively.  Mention: the treatment with the steepest rise, the
+treatment with the highest asymptote within the 10M-step budget,
+whether the curves cross, and whether the across-seed std bands
+overlap meaningfully.}
+
+\subsection{Aggregate Metrics}
+\label{sec:results-aggregate}
+
+\begin{table}[t]
+\centering
+\small
+\caption{%
+  Aggregate metrics per treatment.  IQM is the interquartile mean of
+  per-seed best-episode reward; CIs are 95\% percentile bootstrap
+  intervals with 2{,}000 resamples.  $n$ = 3 seeds per treatment.
+}
+\label{tab:aggregate}
+\begin{tabular}{lcccc}
+\toprule
+Treatment & Mean & Median & IQM & 95\% CI \\
+\midrule
+Pixel    & \todopilot{x.x} & \todopilot{x.x} & \todopilot{x.x} & \todopilot{[lo, hi]} \\
+Symbolic & \todopilot{x.x} & \todopilot{x.x} & \todopilot{x.x} & \todopilot{[lo, hi]} \\
+Hybrid   & \todopilot{x.x} & \todopilot{x.x} & \todopilot{x.x} & \todopilot{[lo, hi]} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\todopilot{Insert one paragraph interpreting \Cref{tab:aggregate}.
+Highlight: the highest-IQM treatment, whether its CI overlaps the
+others, and the relative spread of the bands across seeds (e.g., "the
+hybrid treatment had a tighter CI, suggesting more consistent
+training across seeds").}
+
+\paragraph{Probability of improvement.}
+\todopilot{Insert pairwise PoI numbers from
+\texttt{scripts/analyze.py}'s probability-of-improvement matrix.  For
+each ordered pair (A, B), report $\Pr[\text{score}_A >
+\text{score}_B]$ with its 95\% CI.  Mention which pairs cross or fail
+to cross 0.5.}
+
+\subsection{Milestone Progression}
+\label{sec:results-milestones}
+
+\begin{figure}[t]
+\centering
+% \includegraphics[width=0.95\linewidth]{figures/milestone_race.pdf}
+\caption{%
+  \todopilot{First-episode race chart for the 18 pre-registered event
+    flags.  For each treatment, the median first-triggered episode
+    across seeds is plotted; flags never triggered by any seed are
+    shown as a hatched bar at the right edge.  Lower is faster.}
+}
+\label{fig:milestones}
+\end{figure}
+
+\todopilot{Insert one paragraph reporting which milestones each
+treatment reached.  Pay particular attention to: (i) the
+\texttt{EVENT\_GOT\_STARTER} flag, which any minimally-functional
+agent should reach quickly; (ii) the \texttt{EVENT\_BEAT\_BROCK} flag,
+which is the primary metric and is unlikely to be reached at 10M
+steps; (iii) the canary flag
+\texttt{EVENT\_GOT\_POKEMON\_FROM\_FAN\_CLUB\_CHAIRMAN}, which should
+\emph{not} be reached---confirming that the agent is not exploiting an
+unintended path.}
+
+\subsection{Final-Window Performance}
+\label{sec:results-final}
+
+\begin{figure}[t]
+\centering
+% \includegraphics[width=0.6\linewidth]{figures/final_performance.pdf}
+\caption{%
+  Final-window performance: mean reward over the last 50 episodes per
+  seed, aggregated as mean $\pm$ std across the three seeds per
+  treatment.
+}
+\label{fig:final-perf}
+\end{figure}
+
+\todopilot{One short paragraph: agreement or disagreement between the
+final-window bar chart and the IQM table.  Disagreement would be
+informative---e.g., a treatment with high IQM but low final-window
+reward suggests instability late in training.}
+
+\subsection{Compute}
+\label{sec:results-compute}
+
+\todopilot{Add a small table with wall-clock per run (mean across
+seeds), GPU model, peak GPU utilisation, and total GPU-hours for the
+nine pilot runs.  Pull from \texttt{paper/compute\_ledger.md}.}
