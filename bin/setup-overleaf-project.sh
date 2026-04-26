@@ -193,9 +193,11 @@ if [[ -d "$CLONE_DIR/.git" ]]; then
 else
   mkdir -p "$(dirname "$CLONE_DIR")"
   # Token-embedded URL — git stores this in .git/config, which means
-  # subsequent pull/push don't need any further auth helper.  Same
-  # security posture as the rest of overleaf-mcp's setup flow.
-  clone_url="https://x:${OVERLEAF_TOKEN}@git.overleaf.com/${PROJECT_ID}"
+  # subsequent pull/push don't need any further auth helper.  Overleaf
+  # requires the username to be literally "git" (not "x" or
+  # "anything") — the server returns 403 otherwise.  See
+  # https://www.overleaf.com/learn/how-to/Git_integration_authentication_tokens
+  clone_url="https://git:${OVERLEAF_TOKEN}@git.overleaf.com/${PROJECT_ID}"
   if ! git clone "$clone_url" "$CLONE_DIR" 2>&1 \
         | sed "s|${OVERLEAF_TOKEN}|<REDACTED>|g"; then
     err "git clone failed.  Common causes:
