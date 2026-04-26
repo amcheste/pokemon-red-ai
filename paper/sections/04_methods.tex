@@ -1,0 +1,147 @@
+\section{Methods}
+\label{sec:methods}
+
+This section fixes the training pipeline and the statistical
+methodology.  The values reported here were committed to the
+pre-registered plan in \texttt{paper/analysis\_plan.md} before any
+main-result experiments were run; we note any deviations explicitly in
+\Cref{sec:deviations}.
+
+\subsection{Algorithm and Architecture}
+\label{sec:algorithm}
+
+We use RecurrentPPO from
+\texttt{sb3-contrib}~\citep{sb3,schulman2017ppo,hausknecht2015drqn} for
+all three treatments.  The architecture upstream of the LSTM differs
+across treatments (\Cref{sec:obs-treatments}) but everything from the
+LSTM onward is identical:
+%
+\begin{itemize}
+\item \textbf{LSTM:} 1 layer, 256 hidden units (parameter-matched
+  across all three treatments).
+\item \textbf{Policy and value heads:} 2-layer MLPs of width 64 each,
+  with \texttt{tanh} activations.
+\item \textbf{Action distribution:} categorical over the 7 buttons.
+\end{itemize}
+%
+The decision to vary only the encoder architecture is deliberate: any
+performance difference between treatments is attributable to what the
+observation stream makes available to the LSTM, not to differences in
+recurrence or policy expressivity.
+
+\subsection{Hyperparameters}
+\label{sec:hyperparameters}
+
+The RecurrentPPO hyperparameters used in the pilot are:
+\todopilot{Confirm against the actual values in
+\texttt{pokemon\_red\_ai/training/models.py} after the first run; the
+values below are the pre-registered defaults.}
+%
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{lr}
+\toprule
+Hyperparameter & Value \\
+\midrule
+Learning rate & $3 \times 10^{-4}$ \\
+Batch size    & $256$ \\
+Rollout length ($n\_\text{steps}$) & $2{,}048$ \\
+Epochs per update & $10$ \\
+Entropy coefficient & $0.01$ \\
+Discount $\gamma$ & $0.99$ \\
+GAE $\lambda$ & $0.95$ \\
+Clip range & $0.2$ \\
+Parallel envs & $1$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+%
+We deliberately use a single environment per training run rather than
+the 8-env parallelism committed in the long-form plan, because the
+PyBoy emulator is single-threaded per instance and parallelism on a
+single machine yields diminishing returns past 4 envs in our
+preliminary timing.  For the journal version we will revisit
+parallelism once compute scales beyond a single workstation.
+
+\subsection{Training Protocol}
+\label{sec:protocol}
+
+Each treatment is trained for $10^7$ environment steps across three
+seeds (42, 123, 456).  No hyperparameter tuning is performed within
+the pilot; all treatments use identical hyperparameters.  Training is
+checkpoint-saved every 250{,}000 steps and the best checkpoint per run
+(by training-time best-episode reward) is retained for evaluation.
+
+\subsection{Evaluation Metric and Statistical Analysis}
+\label{sec:stats}
+
+The pre-registered \emph{primary} metric is Boulder Badge win-rate at
+the end of training, evaluated as the fraction of 20 deterministic
+rollouts that earn the badge before episode truncation.  At
+10M~environment steps---one-tenth of the journal-version
+budget---reaching Brock is a stretch goal rather than a baseline
+expectation; in this paper we therefore report the primary metric
+together with two informative secondary metrics:
+%
+\begin{itemize}
+\item \textbf{Best episode reward} during training (accumulated event
+  flags + discovery + time penalty).  This is a continuous proxy for
+  progress and is what we use as the single number per seed when
+  computing IQM.
+\item \textbf{First episode at which each event flag is triggered.}
+  Reported per-treatment as a milestone progression chart.
+\end{itemize}
+
+\paragraph{Aggregate metrics with confidence intervals.}
+We use \texttt{rliable}~\citep{agarwal2021rliable} for all aggregate
+statistics.  The primary point estimate per treatment is the
+\emph{interquartile mean} (IQM) over the seed-level best-episode
+rewards; we drop the bottom and top quartiles before averaging to
+reduce sensitivity to outlier seeds.  Uncertainty is reported as a
+95\% percentile bootstrap CI with $2{,}000$ resamples.
+
+\paragraph{Probability of improvement.}
+For pairwise comparisons we report the probability of improvement
+(PoI), $\Pr[\text{score}_A > \text{score}_B]$, estimated via stratified
+bootstrap.  We treat a treatment as superior to another only if the
+95\% CI of PoI excludes 0.5.
+
+\subsection{Deviations from the Pre-Registered Plan}
+\label{sec:deviations}
+
+The following deviations from the pre-registered plan are made
+explicitly for the EWRL pilot and will be returned to nominal for the
+journal version:
+%
+\begin{itemize}
+\item \textbf{Seed count.}  Three seeds rather than the
+  five-minimum committed for the main result.  We adopt three for the
+  pilot to fit within the EWRL submission window; the journal version
+  will use five (minimum) or eight (preferred) seeds per treatment.
+\item \textbf{Training budget.}  $10^7$ steps rather than $10^8$.
+  Reaching Brock is a stretch goal at this budget.  Effects detectable
+  at $10^7$ are likely conservative estimates of effects at the
+  full-budget version.
+\item \textbf{Single environment per run.}  We run one parallel
+  environment rather than the eight committed in the plan.  The
+  journal version will revisit this once compute scales beyond a
+  single workstation.
+\end{itemize}
+%
+We do not deviate from the pre-registered hypotheses, primary or
+secondary metrics, statistical tests, event-flag set, or evaluation
+protocol.
+
+\subsection{Compute and Reproducibility}
+\label{sec:compute}
+
+\todopilot{Fill from \texttt{paper/compute\_ledger.md} after pilots
+finish: per-treatment wall-clock time, GPU utilisation peak, peak
+memory, total GPU-hours.  Format as a small table.}
+
+The training script, the evaluation harness, the statistical
+pipeline, and the live training dashboards are open-sourced in the
+project repository.  Training-run hyperparameter dumps and W\&B
+artifact links for the runs reported here are provided in the
+supplementary material.

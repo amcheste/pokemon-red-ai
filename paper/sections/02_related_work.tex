@@ -1,0 +1,63 @@
+\section{Related Work}
+\label{sec:related-work}
+
+\paragraph{Long-horizon RL benchmarks.}
+The Arcade Learning Environment~\citep{bellemare2013arcade} provided
+the dominant benchmark for value-based and policy-gradient deep RL
+methods through the late 2010s, but its tasks rarely exceed a few
+thousand frames per episode and have dense, well-shaped reward
+signals.  Procgen~\citep{cobbe2020procgen} added procedural generation
+to stress generalisation but kept per-episode horizons short.  More
+recent open-ended benchmarks---Craftax~\citep{matthews2024craftax} and
+MiniHack~\citep{samvelyan2021minihack}---move toward the
+sparse-reward, long-horizon regime, but do so in synthetic worlds whose
+dynamics are simple enough to render in compute-light JAX.  The
+present work targets the same regime via a real, hand-designed game
+environment, where the causal chains and reward sparsity are products
+of human design rather than procedural generation.
+
+\paragraph{Pok\'emon Red as an RL test bed.}
+The Pok\'emon-RL community has produced influential code releases and
+blog-post-quality empirical results on Pok\'emon
+Red~\citep{whitney2023pokemonrl,pokemonred_experiments}, demonstrating
+that PPO with a pixel-based observation can learn meaningful behaviour
+within the first few towns of the game.  These projects have been
+crucial for showing the environment is tractable, but they do not
+present controlled comparisons across observation treatments, do not
+report bootstrap-based aggregate statistics, and have not been
+released as installable Gymnasium environments.  We build directly on
+their foundation while adding the methodological scaffolding required
+for publication-ready empirical claims.
+
+\paragraph{Observation representations in RL.}
+The pixel-vs-state question has been studied in narrower contexts:
+\citet{anand2019unsupervised} showed that learned state representations
+on Atari preserve much of the underlying game state, suggesting that
+pixel agents \emph{re-derive} information that a symbolic agent could
+read directly.  \citet{kornblith2019cka} introduced CKA as a tool for
+comparing internal representations across networks, which we plan to
+apply in follow-up work to ask whether pixel and symbolic agents
+converge to similar internal features.  To our knowledge, no prior
+work performs a matched-architecture, matched-reward, matched-compute
+comparison of pixel, symbolic, and hybrid observation streams in a
+single long-horizon RL task.
+
+\paragraph{Recurrent policies under partial observability.}
+Pok\'emon Red is partially observable from any single frame: the
+overworld map, the player's party, and the event-flag state of the
+world are not visible simultaneously.  Recurrent policies are the
+canonical response to partial
+observability~\citep{hausknecht2015drqn}.  We use the
+RecurrentPPO~\citep{schulman2017ppo} implementation from
+\texttt{sb3-contrib}~\citep{sb3} for all three treatments, holding the
+recurrent-layer architecture fixed and varying only the upstream
+encoder.
+
+\paragraph{Statistical reporting in deep RL.}
+\citet{agarwal2021rliable} catalogued the field's practice of reporting
+single-seed learning curves and showed how strongly that practice
+overstates effect sizes.  Their \texttt{rliable} library has become
+standard for reporting interquartile means with stratified-bootstrap
+confidence intervals, and we adopt it throughout.  Our pre-registered
+plan commits to IQM as the primary point estimate and 95\% bootstrap
+CIs with 2,000 resamples as the primary uncertainty estimate.

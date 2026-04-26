@@ -1,0 +1,135 @@
+\section{Environment}
+\label{sec:environment}
+
+We release \textsc{PokeGym}, a Gymnasium-compatible
+environment~\citep{gymnasium} that wraps a headless
+PyBoy~\citep{pyboy} emulator running an unmodified Pok\'emon Red ROM.
+The environment exposes a discrete action space, three first-class
+observation representations, an event-flag-based reward calculator, and
+a curriculum-aware save-state system.
+
+\subsection{Action Space}
+The base environment supports the standard Game Boy buttons: D-Pad
+(\textsc{Up}, \textsc{Down}, \textsc{Left}, \textsc{Right}),
+\textsc{A}, \textsc{B}, \textsc{Start}.  We exclude \textsc{Select}
+because it has no in-game effect for the section of the game we
+study.  This yields $|\mathcal{A}| = 7$.  Each environment step
+advances the emulator by 24 frames (one in-game tile of overworld
+movement) before returning control to the agent.
+
+\subsection{Observation Treatments}
+\label{sec:obs-treatments}
+
+The same emulator state can be exposed as three different observation
+spaces, selected at environment construction time via
+\texttt{observation\_type}.
+
+\paragraph{Pixel.}
+A single $80 \times 72$ grayscale frame ($\mathcal{B}^{80 \times 72}$,
+$\mathcal{B} = \{0, \ldots, 255\}$).  We use grayscale rather than RGB
+because the Game Boy's 4-shade palette already loses no information
+relative to RGB, and this halves the input dimensionality.  The pixel
+agent encodes this with a Nature-DQN-style
+CNN~\citep{mnih2015atari}---three convolutional layers followed by a
+fully-connected projection to a 256-dim feature vector.
+
+\paragraph{Symbolic.}
+A flat 29-dimensional float vector containing:
+%
+\begin{itemize}
+\item \textbf{Player position} (3 dims): map ID, $x$ tile coordinate,
+  $y$ tile coordinate.
+\item \textbf{Health and party} (4 dims): current HP fraction, party
+  size, max party level, total levels summed.
+\item \textbf{Currency and inventory} (3 dims): money (log-scaled),
+  badge count, item-bag fill ratio.
+\item \textbf{Exploration state} (2 dims): unique-maps-visited count,
+  unique-tiles-visited count.
+\item \textbf{Event flags} (17 dims): a binary vector for the 17
+  pre-registered Boulder Path event flags (\Cref{sec:events}); the
+  18th flag (\texttt{EVENT\_GOT\_POKEMON\_FROM\_FAN\_CLUB\_CHAIRMAN})
+  is held out as a sanity-check canary.
+\end{itemize}
+%
+The symbolic agent encodes this with a 2-layer MLP ($29 \to 128 \to
+256$) projecting to the same 256-dim feature space as the pixel CNN,
+keeping the downstream LSTM input dimension matched.
+
+\paragraph{Hybrid.}
+A \texttt{Dict} space combining both branches.  The CNN and MLP run in
+parallel; their 256-dim outputs are concatenated to a 512-dim vector
+before entering the LSTM.  The hybrid agent has roughly 2$\times$ the
+encoder parameters of pixel or symbolic alone, but identical
+recurrent and policy heads.  We do not match parameter counts across
+treatments---matching the encoder \emph{capacity} would require
+shrinking the pixel CNN below the published Nature-DQN architecture
+and would conflate two design decisions; we match the architecture
+above the encoder instead.  We discuss this trade-off in
+\Cref{sec:discussion}.
+
+\subsection{Reward}
+\label{sec:reward}
+
+We use an event-flag-based reward calculator that issues a fixed
+positive reward the first time each pre-registered flag is triggered
+in an episode, plus a small per-step time penalty.  The 18-flag set is
+committed in the pre-registered plan and corresponds to the canonical
+critical path between the player's bedroom in Pallet Town and Brock's
+Boulder Badge in Pewter City Gym.  In addition to event flags, we
+issue:
+%
+\begin{itemize}
+\item A small per-step time penalty ($-0.001$) to encourage timely
+  progress.
+\item A discovery reward for the first visit to each new map ID.
+\item Negative reward for fainting (HP $\to$ 0 across the entire
+  party).
+\end{itemize}
+%
+All other shaping signals (e.g., level-based or money-based shaping)
+are zero by default.  This keeps the reward signal close to the
+event-flag milestones, which are observable, interpretable, and
+directly map to the game's progression.
+
+\subsection{Pre-Registered Event Flags}
+\label{sec:events}
+
+The 18 event flags used by the reward calculator are listed in the
+appendix and committed in the pre-registered plan.  They cover:
+deliver Oak's parcel (8 flags), traverse Viridian Forest (3 flags),
+defeat Brock's gym trainers and Brock himself (5 flags), plus one
+optional stretch milestone (Rival fight on Route 22) and one canary
+flag that should not be reachable before Brock and is monitored as a
+sanity check.
+
+Flag bits and addresses are extracted from the
+\texttt{pret/pokered}\footnote{\url{https://github.com/pret/pokered}}
+disassembly and verified by emulator-side replay.
+
+\subsection{Curriculum and Episode Resets}
+\label{sec:curriculum}
+
+We use a single fixed save state, \texttt{post\_intro.state}, captured
+in Pallet Town immediately after Professor Oak's introduction
+sequence.  All episodes reset to this state.  Pilot results in this
+paper therefore reflect the agent's ability to traverse Route 1 →
+Viridian → Viridian Forest → Pewter from a fixed starting point.
+Future work will sample from a curriculum of save states (Pallet,
+Viridian Pok\'emon Center, Mt. Moon entrance) using a Go-Explore-style
+weighted distribution.
+
+\subsection{Episode Truncation}
+Episodes truncate at 15{,}000 environment steps regardless of in-game
+state.  This is approximately 30 minutes of in-game time at the
+emulator's 24-frame action repeat and is empirically sufficient for
+even a randomly-acting policy to leave Pallet Town occasionally,
+preventing the agent from being stuck in a state with zero reward
+signal.
+
+\subsection{Reproducibility}
+\textsc{PokeGym} is open-source and pip-installable.  The training
+script, evaluation harness, statistical analysis pipeline, and live
+training dashboards are released under an OSI-approved license at the
+project repository.  We seed every RNG that affects training (Python,
+NumPy, PyTorch, Gymnasium) deterministically per run and document the
+exact seeds in the supplementary material.

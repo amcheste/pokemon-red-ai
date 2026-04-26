@@ -1,0 +1,113 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{What the Pilot Can and Cannot Conclude}
+
+\todopilot{Open with one paragraph summarising the headline claim:
+e.g., ``At 10M environment steps and three seeds per treatment, the
+\emph{X} observation treatment achieved an IQM of \emph{Y}, with a
+95\% bootstrap CI \emph{Z}; under the pre-registered probability-of-
+improvement threshold, this difference is/is not statistically
+significant.''  Be precise about what is and is not concluded.}
+
+The 10M-step budget and three-seed pilot is deliberately preliminary.
+It is sufficient to detect large effect sizes---a treatment that
+clearly cannot leave Pallet Town versus one that consistently reaches
+Viridian Forest---but it cannot reliably distinguish small-to-medium
+effects.  In particular, the bootstrap CIs for the three treatments
+\todopilot{do/do not} overlap, and we therefore \todopilot{can/cannot}
+make a strong claim about the ranking of treatments at the
+journal-version compute budget.
+
+\subsection{Hypothesis 1 Revisited}
+\label{sec:h1}
+
+The pre-registered first hypothesis (H1) was that \emph{at matched
+compute and matched architecture, symbolic observations yield
+significantly better sample efficiency than pixel observations}.
+
+\todopilot{Address H1 directly.  Did the data support, refute, or
+fail-to-distinguish the hypothesis?  Mention the specific comparison
+(IQM-symbolic vs IQM-pixel + their CIs) and the corresponding
+probability-of-improvement value.  Be honest if the pilot is
+inconclusive.}
+
+\subsection{Why Pixel Might Underperform}
+
+A pixel agent must implicitly re-derive all the structured state that
+the symbolic agent reads directly from
+RAM~\citep{anand2019unsupervised}: the player's coordinates, the
+event-flag bit-vector, the contents of its party.  At a fixed compute
+budget that re-derivation cost is paid in policy-network capacity and
+in sample efficiency.  In a long-horizon, sparse-reward environment
+where reward is gated on event flags, the symbolic agent has direct
+access to the very signal that determines reward.  We expect this gap
+to be especially pronounced early in training, when the pixel agent's
+internal representations are not yet useful.
+
+\subsection{Why Hybrid Might Not Strictly Dominate}
+
+A naïve expectation is that the hybrid treatment, having access to
+\emph{both} streams, should always win.  In practice, with a fixed
+training budget, the hybrid agent must learn to weight two encoders
+and may suffer from gradient interference if the two streams provide
+redundant or conflicting signals.  Whether hybrid actually wins, ties,
+or loses against the better single-stream treatment is an empirical
+question; \todopilot{report the observed ranking}.
+
+\subsection{Threats to Validity}
+
+\paragraph{Encoder capacity is not parameter-matched.}
+The hybrid encoder has roughly twice the parameter count of pixel or
+symbolic alone.  This is a known confound; we discuss the trade-off in
+\Cref{sec:obs-treatments}.  A capacity-matched ablation, in which the
+single-stream encoders are widened to match the hybrid encoder's
+total parameter count, is part of the journal-version plan.
+
+\paragraph{Single fixed save state.}
+All training in this pilot resets to \texttt{post\_intro.state}
+(Pallet Town).  Effects observed here may not generalise to a
+curriculum that samples from multiple save states, e.g., one rooted
+inside a more partially-observable region of the game such as Mt.
+Moon.  We will address this in the journal version with a
+Go-Explore-style weighted save-state curriculum.
+
+\paragraph{Three seeds.}
+Three seeds is enough to detect large effects but provides limited
+power for medium effects, particularly at the IQM tails.  All
+quantitative claims are reported with bootstrap CIs and a
+probability-of-improvement threshold; we do not over-interpret point
+estimates.
+
+\paragraph{No hyperparameter tuning per treatment.}
+We use the same RecurrentPPO hyperparameters across all three
+treatments, which is fair but pessimistic for a treatment whose
+optimum lies far from those defaults.  The journal version will
+include per-treatment hyperparameter tuning via Optuna on a held-out
+save state.
+
+\subsection{Future Work}
+\label{sec:future-work}
+
+The journal-length follow-up will extend this pilot in three
+directions.  First, the seed count will increase to five (minimum)
+and the training budget to $10^8$ steps per seed, restoring the
+pre-registered design.  Second, four pre-committed
+ablations---removing the LSTM, removing RND-style intrinsic
+exploration, ablating frame-stacking, and ablating the save-state
+curriculum---will isolate the contributions of recurrence, novelty
+bonuses, temporal observation, and curriculum to the per-treatment
+gap.  Third, a representational similarity analysis using
+CKA~\citep{kornblith2019cka} will ask whether the three treatments
+converge to similar internal features once trained, or whether the
+performance gap reflects a deeper structural difference in what each
+observation stream lets the agent represent.
+
+\subsection{Open Release}
+
+The full training, evaluation, and analysis pipeline is open-sourced.
+The environment is pip-installable as \textsc{PokeGym}.  The W\&B
+project is public and the run-level logs and model checkpoints are
+linked from the supplementary material.  We hope the benchmark and
+the analysis scaffolding lower the barrier for further work in
+long-horizon RL on real, hand-designed game environments.
