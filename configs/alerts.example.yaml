@@ -1,0 +1,46 @@
+# Pokemon Red RL — Training Alerts Config (AMC-78)
+#
+# Copy this file to ``configs/alerts.yaml`` and tweak.  Pass it to
+# ``scripts/train.py`` via:
+#
+#     python scripts/train.py --rom rom.gb --enable-alerts \
+#         --alerts-config configs/alerts.yaml
+#
+# Channel-specific CLI flags (``--alerts-desktop``, ``--alerts-slack-webhook``)
+# add channels on top of whatever this file enables.
+
+channels:
+  # macOS-native desktop notification (uses osascript).  No extra deps.
+  desktop:
+    enabled: true
+    app_name: "Pokemon Red RL"
+
+  # Slack incoming webhook.  Either set ``webhook_url`` here or export
+  # ``SLACK_WEBHOOK_URL`` and the channel will pick it up.
+  slack:
+    enabled: false
+    # webhook_url: https://hooks.slack.com/services/T000/B000/XXXX
+    username: "Pokemon Red RL"
+
+  # SMTP email.  Useful for unattended overnight runs.  Falls back to
+  # ``SMTP_HOST`` / ``SMTP_PORT`` / ``SMTP_USER`` / ``SMTP_PASSWORD`` /
+  # ``ALERT_EMAIL_FROM`` / ``ALERT_EMAIL_TO`` env vars when keys are
+  # omitted.
+  email:
+    enabled: false
+    host: smtp.gmail.com
+    port: 587
+    use_tls: true
+    # sender: alerts@example.com
+    # recipients:
+    #   - me@example.com
+
+triggers:
+  # Episodes without best-reward improvement before plateau alert fires.
+  plateau_episodes: 50
+  # Minimum episode count before plateau alerts can fire (warmup).
+  plateau_min_episodes: 20
+  # Timesteps between checkpoint alerts (0 = disable).
+  checkpoint_alert_freq: 100000
+  # Per-trigger-type cooldown to prevent spam.
+  cooldown_seconds: 60
