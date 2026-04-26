@@ -1,0 +1,44 @@
+# Citation File Format — used by GitHub's "Cite this repository" widget.
+# See https://citation-file-format.github.io/ for the schema.
+cff-version: 1.2.0
+title: "Pokémon Red — A Long-Horizon RL Benchmark"
+message: "If you use this software in your research, please cite the working paper below."
+type: software
+authors:
+  - given-names: Alan
+    family-names: Chester
+    email: amcheste@gmail.com
+    affiliation: CAM Labs LLC
+repository-code: "https://github.com/amcheste/pokemon-red-ai"
+url: "https://github.com/amcheste/pokemon-red-ai"
+abstract: >-
+  A controlled empirical study of observation representations
+  (pixel, symbolic, hybrid) in long-horizon, sparse-reward
+  reinforcement learning, using Pokémon Red as the benchmark
+  environment.  RecurrentPPO agents are trained against an
+  18-flag event-progress reward; results are reported with
+  rliable interquartile means and 95% stratified-bootstrap
+  confidence intervals.  Released as a 3-paper cascade
+  (EWRL 2026 → NeurIPS 2026 workshop → TMLR).
+keywords:
+  - reinforcement-learning
+  - long-horizon-rl
+  - representation-learning
+  - pokemon-red
+  - benchmark
+  - rliable
+license: MIT
+preferred-citation:
+  type: unpublished
+  authors:
+    - given-names: Alan
+      family-names: Chester
+      email: amcheste@gmail.com
+      affiliation: CAM Labs LLC
+  title: >-
+    Symbols or Pixels? A Controlled Study of Observation
+    Representations in Long-Horizon Reinforcement Learning
+  year: 2026
+  notes: >-
+    EWRL 2026 workshop submission.  Pre-print available at
+    https://github.com/amcheste/pokemon-red-ai

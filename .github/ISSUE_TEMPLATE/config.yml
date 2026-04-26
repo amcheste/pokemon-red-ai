@@ -1,0 +1,9 @@
+# Disable blank issues — force users through a template so we get
+# actionable bug reports instead of "it doesn't work" one-liners.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/amcheste/pokemon-red-ai/discussions
+    about: For research questions, design discussion, or anything that's
+      not a clear bug or feature request, please use Discussions.
