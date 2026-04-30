@@ -22,7 +22,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="${PYTHON:-./venv/bin/python3}"
 
 ROM_PATH=""
-SAVE_STATE="states/post_intro.state"
+SAVE_STATE="states/s0_post_intro.state"
 TOTAL_TIMESTEPS="10000000"
 TREATMENTS="pixel,symbolic,hybrid"
 SEEDS="42,123,456"
@@ -31,6 +31,7 @@ LOG_DIR="./logs"
 ALERTS_CONFIG="configs/alerts.yaml"
 WANDB_PROJECT="pokemon-red-ai"
 PARALLEL=1
+N_ENVS=4
 DRY_RUN=0
 NO_CAFFEINATE=0
 SKIP_COMPLETED=1
@@ -49,8 +50,10 @@ Required:
 
 Optional:
   --save-state PATH         PyBoy save state to reset to.
-                            Default: states/post_intro.state
+                            Default: states/s0_post_intro.state
   --total-timesteps N       Steps per run.  Default: 10000000 (10M)
+  --n-envs N                Parallel envs per pilot (SubprocVecEnv).
+                            Default: 4.  Each env uses one CPU core.
   --treatments LIST         Comma-separated observation types.
                             Default: pixel,symbolic,hybrid
   --seeds LIST              Comma-separated seeds.
@@ -109,6 +112,7 @@ while [[ $# -gt 0 ]]; do
     --rom)               ROM_PATH="$2";               shift 2 ;;
     --save-state)        SAVE_STATE="$2";             shift 2 ;;
     --total-timesteps)   TOTAL_TIMESTEPS="$2";        shift 2 ;;
+    --n-envs)            N_ENVS="$2";                 shift 2 ;;
     --treatments)        TREATMENTS="$2";             shift 2 ;;
     --seeds)             SEEDS="$2";                  shift 2 ;;
     --save-root)         SAVE_ROOT="$2";              shift 2 ;;
@@ -249,6 +253,7 @@ build_cmd() {
     --algorithm "RecurrentPPO"
     --reward-strategy "events"
     --total-timesteps "$TOTAL_TIMESTEPS"
+    --n-envs "$N_ENVS"
     --seed "$seed"
     --save-dir "$save_dir"
     --wandb-project "$WANDB_PROJECT"
@@ -294,6 +299,7 @@ run_one() {
     --algorithm "RecurrentPPO"
     --reward-strategy "events"
     --total-timesteps "$TOTAL_TIMESTEPS"
+    --n-envs "$N_ENVS"
     --seed "$seed"
     --save-dir "$SAVE_ROOT/${run_name}"
     --wandb-project "$WANDB_PROJECT"

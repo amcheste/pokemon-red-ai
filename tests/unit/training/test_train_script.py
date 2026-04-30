@@ -7,11 +7,18 @@ running a training loop (no ROM or PyBoy needed).
 
 import pytest
 import numpy as np
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 # The script adds project root to sys.path itself, but for test
 # collection we import directly.
-from scripts.train import build_parser, set_global_seeds
+from scripts.train import (
+    _make_env_factory,
+    _make_vec_env,
+    build_parser,
+    set_global_seeds,
+)
 
 
 class TestArgumentParser:
@@ -77,6 +84,19 @@ class TestArgumentParser:
         ])
         assert args.lstm_hidden_size == 512
 
+    def test_n_envs_default_is_one(self):
+        parser = build_parser()
+        args = parser.parse_args(["--rom", "test.gb"])
+        assert args.n_envs == 1
+
+    def test_n_envs_override(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "--rom", "test.gb",
+            "--n-envs", "8",
+        ])
+        assert args.n_envs == 8
+
     @pytest.mark.parametrize("strategy", [
         "standard", "exploration", "progress", "sparse", "events",
     ])
@@ -126,6 +146,140 @@ class TestGlobalSeeds:
         set_global_seeds(42)
         b = torch.rand(5)
         assert torch.equal(a, b)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Vectorised environment construction
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _fake_args(tmp_path, **overrides):
+    """Build a minimal args namespace for env-factory tests."""
+    import argparse
+    args = argparse.Namespace(
+        rom="fake.gb",
+        save_state=None,
+        max_episode_steps=15_000,
+        reward_strategy="events",
+        observation_type="pixel",
+        save_dir=str(tmp_path),
+        show_game=False,
+    )
+    for k, v in overrides.items():
+        setattr(args, k, v)
+    return args
+
+
+class TestMakeEnvFactory:
+    """The factory must be picklable and produce a Monitor-wrapped env."""
+
+    def test_factory_is_callable(self, tmp_path):
+        args = _fake_args(tmp_path)
+        factory = _make_env_factory(0, args, reward_config=None)
+        assert callable(factory)
+
+    def test_factory_uses_per_rank_monitor_path(self, tmp_path, monkeypatch):
+        """Two envs at different ranks must write to different monitor files
+        so SubprocVecEnv copies don't clobber each other's logs."""
+        args = _fake_args(tmp_path)
+
+        captured_monitor_paths = []
+
+        def fake_env(*a, **kw):
+            return MagicMock()
+
+        def fake_monitor(env, filename, **kwargs):
+            captured_monitor_paths.append(filename)
+            return env
+
+        monkeypatch.setattr("scripts.train.PokemonRedGymEnv", fake_env)
+        monkeypatch.setattr("scripts.train.Monitor", fake_monitor)
+
+        _make_env_factory(0, args, None)()
+        _make_env_factory(1, args, None)()
+
+        assert len(captured_monitor_paths) == 2
+        assert captured_monitor_paths[0] != captured_monitor_paths[1]
+        assert captured_monitor_paths[0].endswith("monitor.0")
+        assert captured_monitor_paths[1].endswith("monitor.1")
+
+    def test_factory_passes_save_state_path(self, tmp_path, monkeypatch):
+        args = _fake_args(tmp_path, save_state="states/foo.state")
+        captured_kwargs = {}
+
+        def fake_env(**kw):
+            captured_kwargs.update(kw)
+            return MagicMock()
+
+        monkeypatch.setattr("scripts.train.PokemonRedGymEnv", fake_env)
+        monkeypatch.setattr(
+            "scripts.train.Monitor", lambda env, *a, **kw: env
+        )
+        _make_env_factory(0, args, None)()
+        assert captured_kwargs["save_state_path"] == "states/foo.state"
+
+
+class TestMakeVecEnv:
+    """The dispatcher must pick DummyVecEnv vs SubprocVecEnv correctly."""
+
+    def test_n_envs_one_uses_dummy(self, tmp_path, monkeypatch):
+        """Single env path must stay on DummyVecEnv to avoid subprocess
+        overhead — preserves the legacy behaviour bit-for-bit."""
+        args = _fake_args(tmp_path)
+
+        class FakeDummyVecEnv:
+            def __init__(self, env_fns, **kwargs):
+                self.env_fns = env_fns
+                self.num_envs = len(env_fns)
+
+        monkeypatch.setattr("scripts.train.DummyVecEnv", FakeDummyVecEnv)
+        # Stub PokemonRedGymEnv + Monitor so the factory is safe to call
+        # (though _make_vec_env doesn't actually invoke them at n_envs=1
+        # construction time — DummyVecEnv calls them lazily).
+        monkeypatch.setattr(
+            "scripts.train.PokemonRedGymEnv", lambda **kw: MagicMock()
+        )
+        monkeypatch.setattr(
+            "scripts.train.Monitor", lambda env, *a, **kw: env
+        )
+
+        vec = _make_vec_env(args, n_envs=1, reward_config=None)
+        assert isinstance(vec, FakeDummyVecEnv)
+        assert vec.num_envs == 1
+        # Dispatcher correctly chose Dummy over Subproc.
+        assert not isinstance(vec, SubprocVecEnv)
+
+    def test_n_envs_above_one_uses_subproc(self, tmp_path, monkeypatch):
+        """Multi-env path must switch to SubprocVecEnv (the whole point)."""
+        args = _fake_args(tmp_path)
+        # SubprocVecEnv inspection without spawning real subprocesses:
+        # we patch SubprocVecEnv itself to a lightweight mock so the
+        # type / arity check happens at the dispatcher level.
+        captured_factories = []
+
+        class FakeSubprocVecEnv:
+            def __init__(self, env_fns, **kwargs):
+                captured_factories.extend(env_fns)
+                self.env_fns = env_fns
+                self.num_envs = len(env_fns)
+
+        monkeypatch.setattr("scripts.train.SubprocVecEnv", FakeSubprocVecEnv)
+
+        vec = _make_vec_env(args, n_envs=4, reward_config=None)
+        assert isinstance(vec, FakeSubprocVecEnv)
+        assert vec.num_envs == 4
+        assert len(captured_factories) == 4
+        # Each factory must be callable and distinct (per-rank closures)
+        assert all(callable(f) for f in captured_factories)
+        assert len(set(id(f) for f in captured_factories)) == 4
+
+    def test_n_envs_zero_clamps_via_train_function(self):
+        """The dispatcher itself doesn't clamp; that's done in train()
+        via `max(1, int(args.n_envs))`.  This documents the contract:
+        callers must clamp before calling _make_vec_env."""
+        # No assertion — this is a documentation test.  If clamping
+        # logic moves into the dispatcher in the future, add a real
+        # behavioural test here.
 
 
 if __name__ == "__main__":

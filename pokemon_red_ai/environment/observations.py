@@ -259,45 +259,75 @@ def process_minimal_observation(agent, episode_steps: int, max_episode_steps: in
     return observation
 
 
-def validate_observation(observation: Dict[str, np.ndarray],
-                         observation_space: spaces.Dict) -> bool:
+def validate_observation(
+    observation,
+    observation_space,
+) -> bool:
     """
     Validate that observation matches the defined observation space.
 
+    Handles both ``gymnasium.spaces.Dict`` (e.g., ``hybrid``,
+    ``multi_modal``) and single-Box spaces (e.g., ``pixel``,
+    ``symbolic``, ``minimal``, ``screen_only``).
+
     Args:
-        observation: Observation to validate
-        observation_space: Expected observation space
+        observation: Observation to validate.  ``Dict[str, np.ndarray]``
+            for Dict spaces, ``np.ndarray`` for Box spaces.
+        observation_space: Expected observation space.
 
     Returns:
-        True if observation is valid
+        True if observation is valid.
     """
     try:
-        # Check if observation contains all required keys
-        for key in observation_space.spaces.keys():
-            if key not in observation:
-                logger.error(f"Missing observation key: {key}")
+        # Dict-shaped spaces — validate each component individually.
+        if isinstance(observation_space, spaces.Dict):
+            for key in observation_space.spaces.keys():
+                if key not in observation:
+                    logger.error(f"Missing observation key: {key}")
+                    return False
+            for key, space in observation_space.spaces.items():
+                obs_component = observation[key]
+                if obs_component.shape != space.shape:
+                    logger.error(
+                        f"Shape mismatch for {key}: "
+                        f"{obs_component.shape} != {space.shape}"
+                    )
+                    return False
+                if obs_component.dtype != space.dtype:
+                    logger.error(
+                        f"Dtype mismatch for {key}: "
+                        f"{obs_component.dtype} != {space.dtype}"
+                    )
+                    return False
+                if not space.contains(obs_component):
+                    logger.error(f"Observation {key} outside bounds")
+                    return False
+            return True
+
+        # Single Box space (pixel / symbolic / minimal / screen_only).
+        if isinstance(observation_space, spaces.Box):
+            if observation.shape != observation_space.shape:
+                logger.error(
+                    f"Shape mismatch: "
+                    f"{observation.shape} != {observation_space.shape}"
+                )
                 return False
-
-        # Check each component
-        for key, space in observation_space.spaces.items():
-            obs_component = observation[key]
-
-            # Check shape
-            if obs_component.shape != space.shape:
-                logger.error(f"Shape mismatch for {key}: {obs_component.shape} != {space.shape}")
+            if observation.dtype != observation_space.dtype:
+                logger.error(
+                    f"Dtype mismatch: "
+                    f"{observation.dtype} != {observation_space.dtype}"
+                )
                 return False
-
-            # Check dtype
-            if obs_component.dtype != space.dtype:
-                logger.error(f"Dtype mismatch for {key}: {obs_component.dtype} != {space.dtype}")
+            if not observation_space.contains(observation):
+                logger.error("Observation outside bounds")
                 return False
+            return True
 
-            # Check bounds
-            if not space.contains(obs_component):
-                logger.error(f"Observation {key} outside bounds")
-                return False
-
-        return True
+        logger.error(
+            f"Unsupported observation space type: "
+            f"{type(observation_space).__name__}"
+        )
+        return False
 
     except Exception as e:
         logger.error(f"Observation validation failed: {e}")
