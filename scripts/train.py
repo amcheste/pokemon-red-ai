@@ -42,6 +42,11 @@ import numpy as np
 import torch
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.callbacks import CallbackList
+from stable_baselines3.common.vec_env import (
+    DummyVecEnv,
+    SubprocVecEnv,
+    VecEnv,
+)
 
 from pokemon_red_ai.environment import PokemonRedGymEnv, RewardConfig
 from pokemon_red_ai.training.models import (
@@ -130,6 +135,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--lstm-hidden-size", type=int, default=256,
         help="LSTM hidden size (RecurrentPPO only).",
+    )
+    p.add_argument(
+        "--n-envs", type=int, default=1,
+        help="Parallel environments via SubprocVecEnv.  Each runs its own "
+             "PyBoy instance on a separate CPU core.  Recommended: 4 on M3 Max, "
+             "8+ on cloud high-CPU instances.  Set to 1 for the legacy "
+             "single-env path (DummyVecEnv).",
     )
 
     # ── Reproducibility ──────────────────────────────────────────────
@@ -231,6 +243,72 @@ def set_global_seeds(seed: int) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Vectorised environment construction
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _make_env_factory(
+    rank: int,
+    args: argparse.Namespace,
+    reward_config: Optional[RewardConfig],
+):
+    """Return a callable that constructs one PokemonRedGymEnv + Monitor.
+
+    The returned callable is what SubprocVecEnv / DummyVecEnv invokes
+    inside each subprocess (or the main process for DummyVecEnv).  It
+    is deliberately picklable: it captures only the arguments needed
+    to build the env, no shared state.
+
+    ``rank`` is the per-env index (0..n_envs-1).  Each env writes its
+    Monitor CSV to a rank-suffixed path so the parallel envs don't
+    overwrite each other's logs.
+    """
+    def _init():
+        env = PokemonRedGymEnv(
+            rom_path=args.rom,
+            headless=not args.show_game,
+            max_episode_steps=args.max_episode_steps,
+            reward_strategy=args.reward_strategy,
+            reward_config=reward_config,
+            observation_type=args.observation_type,
+            save_state_path=args.save_state,
+        )
+        # Per-env Monitor file.  ``info_keywords`` makes Monitor copy
+        # our custom per-step metrics into ``ep_info_buffer``, which is
+        # what the W&B callback reads for aggregate episode stats.
+        monitor_path = os.path.join(args.save_dir, f"monitor.{rank}")
+        env = Monitor(
+            env,
+            monitor_path,
+            info_keywords=MONITORED_INFO_KEYS,
+        )
+        return env
+    return _init
+
+
+def _make_vec_env(
+    args: argparse.Namespace,
+    n_envs: int,
+    reward_config: Optional[RewardConfig],
+) -> VecEnv:
+    """Build a SubprocVecEnv (n_envs > 1) or DummyVecEnv (n_envs == 1).
+
+    DummyVecEnv preserves the legacy single-env code path bit-for-bit:
+    one PokemonRedGymEnv runs in the main process, no subprocess
+    overhead.  SubprocVecEnv spawns one process per env, each running
+    its own PyBoy instance — this is the path that yields throughput
+    proportional to CPU core count.
+    """
+    env_fns = [
+        _make_env_factory(rank, args, reward_config)
+        for rank in range(n_envs)
+    ]
+    if n_envs == 1:
+        return DummyVecEnv(env_fns)
+    return SubprocVecEnv(env_fns)
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Main training function
 # ──────────────────────────────────────────────────────────────────────
 
@@ -245,7 +323,8 @@ def train(args: argparse.Namespace) -> None:
     create_directories(args.save_dir)
 
     # ── Environment ──────────────────────────────────────────────────
-    logger.info("Creating environment...")
+    n_envs = max(1, int(args.n_envs))
+    logger.info(f"Creating {n_envs} parallel environment(s)...")
 
     # Build custom reward config for exploration-focused events strategy
     reward_config = None
@@ -265,29 +344,14 @@ def train(args: argparse.Namespace) -> None:
             item_acquisition_reward=8.0,
         )
 
-    env = PokemonRedGymEnv(
-        rom_path=args.rom,
-        headless=not args.show_game,
-        max_episode_steps=args.max_episode_steps,
-        reward_strategy=args.reward_strategy,
-        reward_config=reward_config,
-        observation_type=args.observation_type,
-        save_state_path=args.save_state,
-    )
-    # ``info_keywords`` makes Monitor copy our custom per-step metrics
-    # into ``ep_info_buffer``, which is what the W&B callback reads for
-    # aggregate episode stats (maps_visited mean, badges_max, etc.).
-    env = Monitor(
-        env,
-        os.path.join(args.save_dir, "monitor"),
-        info_keywords=MONITORED_INFO_KEYS,
-    )
+    env = _make_vec_env(args, n_envs, reward_config)
 
     logger.info(
         f"Environment ready  "
         f"obs={args.observation_type}  "
         f"reward={args.reward_strategy}  "
-        f"max_steps={args.max_episode_steps}"
+        f"max_steps={args.max_episode_steps}  "
+        f"n_envs={n_envs}"
     )
 
     # ── Model ────────────────────────────────────────────────────────
