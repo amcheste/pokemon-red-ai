@@ -143,6 +143,14 @@ def build_parser() -> argparse.ArgumentParser:
              "8+ on cloud high-CPU instances.  Set to 1 for the legacy "
              "single-env path (DummyVecEnv).",
     )
+    p.add_argument(
+        "--device", type=str, default=None,
+        choices=["auto", "cpu", "cuda", "mps"],
+        help="PyTorch device for the policy network.  Default: SB3's 'auto' "
+             "(picks cuda if available, else cpu; does NOT pick mps).  Pass "
+             "'mps' explicitly on Apple Silicon to accelerate gradient "
+             "updates on the integrated GPU.",
+    )
 
     # ── Reproducibility ──────────────────────────────────────────────
     p.add_argument(
@@ -368,6 +376,8 @@ def train(args: argparse.Namespace) -> None:
         model_overrides["ent_coef"] = args.ent_coef
     if args.seed is not None:
         model_overrides["seed"] = args.seed
+    if args.device is not None:
+        model_overrides["device"] = args.device
 
     # RecurrentPPO-specific args
     if args.algorithm == "RecurrentPPO":

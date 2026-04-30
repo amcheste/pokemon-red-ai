@@ -32,6 +32,7 @@ ALERTS_CONFIG="configs/alerts.yaml"
 WANDB_PROJECT="pokemon-red-ai"
 PARALLEL=1
 N_ENVS=4
+DEVICE="mps"
 DRY_RUN=0
 NO_CAFFEINATE=0
 SKIP_COMPLETED=1
@@ -54,6 +55,10 @@ Optional:
   --total-timesteps N       Steps per run.  Default: 10000000 (10M)
   --n-envs N                Parallel envs per pilot (SubprocVecEnv).
                             Default: 4.  Each env uses one CPU core.
+  --device {auto,cpu,cuda,mps}
+                            PyTorch device for the policy network.
+                            Default: mps (Apple Silicon GPU).  Set to
+                            'auto' on non-Apple-Silicon hardware.
   --treatments LIST         Comma-separated observation types.
                             Default: pixel,symbolic,hybrid
   --seeds LIST              Comma-separated seeds.
@@ -113,6 +118,7 @@ while [[ $# -gt 0 ]]; do
     --save-state)        SAVE_STATE="$2";             shift 2 ;;
     --total-timesteps)   TOTAL_TIMESTEPS="$2";        shift 2 ;;
     --n-envs)            N_ENVS="$2";                 shift 2 ;;
+    --device)            DEVICE="$2";                 shift 2 ;;
     --treatments)        TREATMENTS="$2";             shift 2 ;;
     --seeds)             SEEDS="$2";                  shift 2 ;;
     --save-root)         SAVE_ROOT="$2";              shift 2 ;;
@@ -254,6 +260,7 @@ build_cmd() {
     --reward-strategy "events"
     --total-timesteps "$TOTAL_TIMESTEPS"
     --n-envs "$N_ENVS"
+    --device "$DEVICE"
     --seed "$seed"
     --save-dir "$save_dir"
     --wandb-project "$WANDB_PROJECT"
@@ -300,6 +307,7 @@ run_one() {
     --reward-strategy "events"
     --total-timesteps "$TOTAL_TIMESTEPS"
     --n-envs "$N_ENVS"
+    --device "$DEVICE"
     --seed "$seed"
     --save-dir "$SAVE_ROOT/${run_name}"
     --wandb-project "$WANDB_PROJECT"
