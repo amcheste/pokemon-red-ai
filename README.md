@@ -1,33 +1,20 @@
-# Pokémon Red — A Long-Horizon RL Benchmark
+# Pokémon Red — Reinforcement Learning Toolkit
 
-**A controlled empirical study of observation representations in
-long-horizon, sparse-reward reinforcement learning, using *Pokémon
-Red* as the benchmark environment.**
+**A Gymnasium-compatible environment and training pipeline for
+*Pokémon Red*, built on PyBoy, Stable-Baselines3, and `sb3-contrib`.**
 
 [![Tests](https://img.shields.io/badge/tests-833%20passing-brightgreen)](tests/)
 [![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
-We compare three observation treatments — **pixel** (raw screen),
-**symbolic** (RAM-derived structured state), and **hybrid** (both) —
-under matched architecture, reward, and compute. RecurrentPPO agents
-are trained against an 18-flag event-progress reward, and results are
-reported with [`rliable`](https://github.com/google-research/rliable)
-interquartile means and 95% stratified-bootstrap confidence intervals.
-
-This work is being released as a 3-paper cascade:
-
-| # | Venue | Status | Target |
-|---|-------|--------|--------|
-| A | EWRL 2026 (workshop, non-archival) | Pilot runs scheduled | 2026-05-25 |
-| B | NeurIPS 2026 workshop (ARLET / Embodied World Models) | Planned | 2026-09-15 |
-| C | TMLR (journal) | Planned | 2027-10-31 |
-
-Pre-registered hypotheses, primary metric, statistical tests, and
-stopping rules are in
-[`paper/analysis_plan.md`](paper/analysis_plan.md). The paper
-itself (LaTeX) lives in [`paper/`](paper/) and is mirrored to Overleaf
-via [`scripts/mirror_paper_to_overleaf.sh`](scripts/mirror_paper_to_overleaf.sh).
+This repository provides everything needed to train RL agents to play
+*Pokémon Red*: an emulator-backed Gymnasium environment with three
+first-class observation treatments (pixel / symbolic / hybrid),
+RecurrentPPO training scripts, an event-flag-based reward calculator
+covering 18 critical-path milestones, live Streamlit monitoring
+dashboards, configurable alerts (desktop / Slack / email), and an
+analysis layer with bootstrap confidence intervals via
+[`rliable`](https://github.com/google-research/rliable).
 
 ---
 
@@ -38,19 +25,18 @@ via [`scripts/mirror_paper_to_overleaf.sh`](scripts/mirror_paper_to_overleaf.sh)
 | `pokemon_red_ai/environment/` | Gymnasium env wrapping PyBoy + 3 observation treatments |
 | `pokemon_red_ai/training/` | RecurrentPPO trainer, callbacks (W&B, alerts, monitoring) |
 | `pokemon_red_ai/analysis/` | Treatment-comparison logic (`comparison.py`) |
-| `scripts/train.py` | Primary training entry point — used by the pilot launcher |
-| `scripts/eval.py` | Deterministic evaluation harness for paper-grade results |
+| `scripts/train.py` | Primary training entry point |
+| `scripts/eval.py` | Deterministic evaluation harness |
 | `scripts/analyze.py` | rliable bootstrap analysis → publication-quality figures |
-| `scripts/compare.py` | Streamlit dashboard for side-by-side treatment comparison |
+| `scripts/compare.py` | Streamlit dashboard for side-by-side run comparison |
 | `scripts/monitor.py` | Streamlit dashboard for live single-run monitoring |
-| `scripts/run_pilots.sh` | Launch the canonical 9-pilot grid (3 treatments × 3 seeds) |
-| `paper/` | LaTeX source, pre-registered analysis plan, compute ledger |
-| `docs/research_playbook.md` | Step-by-step operational guide from setup to submission |
+| `scripts/run_pilots.sh` | Launch a multi-treatment / multi-seed run grid |
+| `docs/research_playbook.md` | Step-by-step operational guide for long-running experiments |
 | `tests/` | 833 unit + integration tests (pytest) |
 
 ---
 
-## Quick start — reproducing the EWRL pilots
+## Quick start
 
 ```bash
 # 1. Install
@@ -65,16 +51,16 @@ python3 scripts/create_save_states.py --rom path/to/PokemonRed.gb
 # 3. Smoke test (~5 min — verify the pipeline end-to-end)
 python3 scripts/train.py \
     --rom path/to/PokemonRed.gb \
-    --save-state states/post_intro.state \
+    --save-state states/s0_post_intro.state \
     --observation-type pixel --total-timesteps 50000 --seed 42 \
     --save-dir ./training_output/smoketest
 
-# 4. Run the full pilot grid (10M steps × 3 treatments × 3 seeds)
+# 4. Run a multi-treatment / multi-seed grid (3 treatments × 3 seeds)
 scripts/run_pilots.sh --rom path/to/PokemonRed.gb --parallel 3
 
-# 5. Generate paper-quality figures
+# 5. Generate publication-quality figures
 python3 scripts/analyze.py --results-dir ./training_output \
-    --output-dir paper/figures --format pdf --reps 10000
+    --output-dir ./figures --format pdf --reps 10000
 ```
 
 For unattended overnight runs, configure desktop / Slack / email alerts:
@@ -83,17 +69,17 @@ For unattended overnight runs, configure desktop / Slack / email alerts:
 cp configs/alerts.example.yaml configs/alerts.yaml   # then enable channels
 ```
 
-The full operational playbook — including compute estimates, parallel
-strategy on Apple Silicon, and the path from pilot results to arXiv
-submission — is in
+The full operational playbook — including compute estimates and a
+parallel-run strategy on Apple Silicon — is in
 [`docs/research_playbook.md`](docs/research_playbook.md).
 
 ---
 
 ## Observation treatments
 
-The core experimental contrast. All three feed into the same LSTM and
-PPO policy / value heads; only the encoder differs.
+Three encoder paths, all feeding into the same LSTM and PPO policy /
+value heads.  Selected via `--observation-type` on
+`scripts/train.py`.
 
 | Treatment | Observation | Encoder | Feature dim |
 |-----------|-------------|---------|-------------|
@@ -101,41 +87,45 @@ PPO policy / value heads; only the encoder differs.
 | `symbolic` | Player position, party stats, 17-flag bit-vector, exploration counters | 2-layer MLP | 256 |
 | `hybrid`   | `pixel` ∪ `symbolic` streams | Both, concatenated at the LSTM input | 512 |
 
-Selected via `--observation-type {pixel,symbolic,hybrid}` on
-`scripts/train.py`. Implementation is in
+Implementation:
 [`pokemon_red_ai/training/models.py`](pokemon_red_ai/training/models.py);
 observation construction in
 [`pokemon_red_ai/environment/observations.py`](pokemon_red_ai/environment/observations.py).
 
+The package also ships three legacy observation types
+(`multi_modal`, `screen_only`, `minimal`) for backward compatibility
+with earlier scripts.
+
 ## Reward function
 
-A pre-registered set of 18 event flags between Pallet Town and the
-Boulder Badge defines the reward signal. Each flag transition
-0 → 1 awards a fixed positive reward exactly once per episode. A
-small per-step time penalty, a new-map discovery bonus, and a
-party-faint penalty are also active; all other shaping is zero by
-default.
+The default `events` reward strategy uses a configurable set of 18
+event flags between Pallet Town and the Boulder Badge.  Each flag
+transition 0 → 1 awards a fixed positive reward exactly once per
+episode.  A small per-step time penalty, a new-map discovery bonus,
+and a party-faint penalty are also active by default.
+
+Four other reward strategies are available
+(`standard` / `exploration` / `progress` / `sparse`); see
+[`pokemon_red_ai/environment/rewards.py`](pokemon_red_ai/environment/rewards.py)
+for the full menu and configuration knobs.
 
 The flag list with bit offsets is in
-[`pokemon_red_ai/game/event_flags.py`](pokemon_red_ai/game/event_flags.py);
-the rationale and locking commitment is in
-[§9 of the analysis plan](paper/analysis_plan.md).
+[`pokemon_red_ai/game/event_flags.py`](pokemon_red_ai/game/event_flags.py).
 
-## Statistical methodology
+## Statistical analysis
 
 Following [Agarwal et al. 2021, *Deep Reinforcement Learning at the
-Edge of the Statistical Precipice*](https://arxiv.org/abs/2108.13264):
+Edge of the Statistical Precipice*](https://arxiv.org/abs/2108.13264),
+the analysis tooling reports:
 
 - **Point estimate:** interquartile mean (IQM) over per-seed scores.
   Robust to outlier seeds in either tail.
 - **Uncertainty:** 95% percentile bootstrap with 2,000 resamples.
 - **Pairwise comparison:** probability of improvement,
-  `Pr[score_A > score_B]` via stratified bootstrap. A treatment is
-  reported as superior if this probability exceeds 0.75 with the 95%
-  CI excluding 0.5.
+  `Pr[score_A > score_B]` via stratified bootstrap.
 
-Implemented in [`scripts/analyze.py`](scripts/analyze.py)
-(post-hoc paper figures) and
+Implemented in [`scripts/analyze.py`](scripts/analyze.py) (post-hoc
+figures) and
 [`pokemon_red_ai/analysis/comparison.py`](pokemon_red_ai/analysis/comparison.py)
 (reusable backend for the live Streamlit comparison and any notebook
 work).
@@ -146,13 +136,12 @@ work).
 |------|----------|
 | Weights & Biases (auto-enabled in `train.py`) | Cloud telemetry; per-treatment run grouping; check from any device |
 | `streamlit run scripts/monitor.py` | Single-run live dashboard — reward curves, event flags, maps, level / party / money |
-| `streamlit run scripts/compare.py` | Treatment comparison — IQM table, learning-curve overlays with 95% bands, milestone race |
+| `streamlit run scripts/compare.py` | Multi-run comparison — IQM table, learning-curve overlays with 95% bands, milestone race |
 | `pokemon_red_ai.training.alerts` | Desktop / Slack / email alerts on first badge, reward plateau, training crash |
 
 ## Use as a library
 
-The training pipeline is fully usable outside the paper context.
-Minimal example with a custom training budget:
+The training pipeline is fully usable outside the bundled scripts:
 
 ```python
 from pokemon_red_ai.environment import PokemonRedGymEnv
@@ -180,22 +169,6 @@ documented in [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md).
 ```
 
 ---
-
-## Citation
-
-```bibtex
-@unpublished{chester2026pokegym,
-  author = {Alan Chester},
-  title  = {Symbols or Pixels? A Controlled Study of Observation
-            Representations in Long-Horizon Reinforcement Learning},
-  year   = {2026},
-  note   = {EWRL 2026 workshop submission, available at
-            https://github.com/amcheste/pokemon-red-ai},
-}
-```
-
-The model card following Mitchell et al. 2019 is in
-[`MODEL_CARD.md`](MODEL_CARD.md).
 
 ## Acknowledgments
 
