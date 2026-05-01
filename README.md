@@ -77,15 +77,28 @@ parallel-run strategy on Apple Silicon — is in
 
 ## Observation treatments
 
-Three encoder paths, all feeding into the same LSTM and PPO policy /
-value heads.  Selected via `--observation-type` on
-`scripts/train.py`.
+Three encoder paths, all feeding into the same LSTM (hidden size 256)
+and PPO policy / value heads (`pi=[256,128]`, `vf=[256,128]`).
+Selected via `--observation-type` on `scripts/train.py`.
 
-| Treatment | Observation | Encoder | Feature dim |
-|-----------|-------------|---------|-------------|
-| `pixel`   | 80×72×1 grayscale Game Boy screen | Nature-DQN-style CNN | 256 |
-| `symbolic` | Player position, party stats, 17-flag bit-vector, exploration counters | 2-layer MLP | 256 |
-| `hybrid`   | `pixel` ∪ `symbolic` streams | Both, concatenated at the LSTM input | 512 |
+| Treatment | Observation | Encoder | Params | Feature dim |
+|-----------|-------------|---------|--------|-------------|
+| `pixel`   | 80×72×1 grayscale Game Boy screen | NatureCNN ([Mnih et al. 2015](https://www.nature.com/articles/nature14236)), `features_dim=256` | ~564K | 256 |
+| `symbolic` | Player position, party stats, 18-flag bit-vector, exploration counters (29 features) | 3-layer MLP `29 → 640 → 640 → 256` | ~594K | 256 |
+| `hybrid`  | `pixel` ∪ `symbolic` streams | NatureCNN(256) + symbolic MLP(256), concatenated | ~1.16M | 512 |
+
+The pixel and symbolic encoders are sized to within 10% on trainable
+parameter count to neutralize the encoder-capacity confound when
+comparing modalities (Henderson et al. 2018; Engstrom et al. 2020;
+Andrychowicz et al. 2021). Strict per-forward FLOP matching across CNN
+and MLP architectures distorts encoder design and is reported
+transparently rather than enforced. Per-condition learning rates are
+selected from a pre-registered log-uniform grid following Eimer et al.
+(2023).
+
+Run [`scripts/check_encoder_capacity.py`](scripts/check_encoder_capacity.py)
+to print the exact parameter / FLOP table and assert the 10% match
+constraint (exits non-zero on violation).
 
 Implementation:
 [`pokemon_red_ai/training/models.py`](pokemon_red_ai/training/models.py);

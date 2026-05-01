@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional, Union
 import gymnasium as gym
 from stable_baselines3 import PPO, A2C, DQN
 from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, NatureCNN
 from sb3_contrib import RecurrentPPO
 import torch
 import torch.nn as nn
@@ -422,6 +422,128 @@ class PokemonFeaturesExtractor(BaseFeaturesExtractor):
         return output_features
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Paper observation treatments — capacity-matched encoders
+#
+# To avoid confounding modality with encoder capacity (Henderson et al.
+# 2018; Engstrom et al. 2020), the pixel and symbolic feature extractors
+# are sized to within 10% on trainable parameter count and emit identical
+# 256-dimensional features; the hybrid extractor concatenates one
+# capacity-matched copy of each to a 512-dim joint representation
+# (Andrychowicz et al. 2021). Strict FLOP matching across CNN and MLP
+# architectures distorts encoder design, so per-forward FLOPs are reported
+# transparently (see scripts/check_encoder_capacity.py) rather than
+# enforced. Per-condition learning rates are selected from a pre-registered
+# log-uniform grid following Eimer et al. (2023), so no treatment is
+# disadvantaged by an inappropriate hyperparameter.
+#
+# Pixel encoder:    NatureCNN (Mnih et al. 2015) with features_dim=256.
+#                   On 80x72x1 input: ~564K params.
+# Symbolic encoder: 3-layer MLP 29 -> 640 -> 640 -> 256 with ReLU.
+#                   ~594K params (5.3% over pixel target — within 10%).
+# Hybrid encoder:   NatureCNN(256) + SymbolicFeaturesExtractor(256),
+#                   concatenated to 512-dim. ~1.16M params (2x single-modality).
+# ──────────────────────────────────────────────────────────────────────
+
+
+# Symbolic input dimensionality is locked here for the capacity match.
+# Must equal observations.SYMBOLIC_DIM. The capacity check script asserts
+# both sources agree.
+PAPER_SYMBOLIC_DIM = 29
+
+# Hidden width chosen to match NatureCNN(features_dim=256) parameter
+# count to within 10%. See scripts/check_encoder_capacity.py.
+SYMBOLIC_HIDDEN_DIM = 640
+
+
+class SymbolicFeaturesExtractor(BaseFeaturesExtractor):
+    """
+    Capacity-matched MLP encoder for the symbolic observation treatment.
+
+    Architecture: input_dim -> 640 -> 640 -> features_dim, ReLU between
+    layers and after the final projection (matching NatureCNN's trailing
+    activation). The width is sized so the parameter count lands within
+    10% of NatureCNN(features_dim=256) on the project's 80x72x1 input.
+
+    The width is *deliberately* larger than typical SAC/TD3 MLP defaults
+    (256) — this is a fairness intervention to neutralize the
+    encoder-capacity confound when comparing modalities. See the module
+    docstring above for the rationale.
+    """
+
+    def __init__(
+        self,
+        observation_space: gym.spaces.Box,
+        features_dim: int = 256,
+        hidden_dim: int = SYMBOLIC_HIDDEN_DIM,
+    ):
+        super().__init__(observation_space, features_dim)
+        input_dim = int(observation_space.shape[0])
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, features_dim),
+            nn.ReLU(),
+        )
+
+    def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        return self.mlp(observations.float())
+
+
+class HybridFeaturesExtractor(BaseFeaturesExtractor):
+    """
+    Capacity-matched two-stream encoder for the hybrid observation treatment.
+
+    Concatenates a 256-dim NatureCNN feature for the screen and a 256-dim
+    SymbolicFeaturesExtractor feature for the game-state vector, producing
+    a 512-dim joint representation. Each half is the same encoder used in
+    the corresponding single-modality treatment, so by construction
+    hybrid_params ≈ pixel_params + symbolic_params (option (c) in the
+    capacity-matching design notes).
+    """
+
+    PIXEL_FEATURES_DIM = 256
+    SYMBOLIC_FEATURES_DIM = 256
+
+    def __init__(
+        self,
+        observation_space: gym.spaces.Dict,
+        features_dim: int = 512,
+    ):
+        # features_dim must equal pixel + symbolic halves
+        assert features_dim == (
+            self.PIXEL_FEATURES_DIM + self.SYMBOLIC_FEATURES_DIM
+        ), (
+            "HybridFeaturesExtractor features_dim must equal the sum of the "
+            f"pixel ({self.PIXEL_FEATURES_DIM}) and symbolic "
+            f"({self.SYMBOLIC_FEATURES_DIM}) halves; got {features_dim}."
+        )
+        super().__init__(observation_space, features_dim)
+
+        if "screen" not in observation_space.spaces or "game_state" not in observation_space.spaces:
+            raise ValueError(
+                "HybridFeaturesExtractor requires a Dict observation space "
+                "with 'screen' and 'game_state' keys; got "
+                f"{list(observation_space.spaces.keys())}"
+            )
+
+        self.pixel_extractor = NatureCNN(
+            observation_space.spaces["screen"],
+            features_dim=self.PIXEL_FEATURES_DIM,
+        )
+        self.symbolic_extractor = SymbolicFeaturesExtractor(
+            observation_space.spaces["game_state"],
+            features_dim=self.SYMBOLIC_FEATURES_DIM,
+        )
+
+    def forward(self, observations: Dict[str, torch.Tensor]) -> torch.Tensor:
+        pixel_features = self.pixel_extractor(observations["screen"])
+        symbolic_features = self.symbolic_extractor(observations["game_state"])
+        return torch.cat([pixel_features, symbolic_features], dim=1)
+
+
 def create_model(algorithm: str,
                  env: gym.Env,
                  tensorboard_log: Optional[str] = None,
@@ -486,22 +608,27 @@ def get_policy_kwargs_for_observation_type(observation_type: str) -> Dict[str, A
             'net_arch': dict(pi=[128, 64], vf=[128, 64]),  # Fixed: use dict
             'activation_fn': nn.ReLU
         }
-    # ── Paper observation treatments ────────────────────────────────
+    # ── Paper observation treatments (capacity-matched) ─────────────
+    # See models.py module docstring above the encoder definitions for
+    # the capacity-matching protocol.
     elif observation_type == "pixel":
-        # SB3's NatureCNN auto-applies for Box image spaces
         return {
+            'features_extractor_class': NatureCNN,
+            'features_extractor_kwargs': {'features_dim': 256},
             'net_arch': dict(pi=[256, 128], vf=[256, 128]),
             'activation_fn': nn.ReLU,
         }
     elif observation_type == "symbolic":
         return {
+            'features_extractor_class': SymbolicFeaturesExtractor,
+            'features_extractor_kwargs': {'features_dim': 256},
             'net_arch': dict(pi=[256, 128], vf=[256, 128]),
             'activation_fn': nn.ReLU,
         }
     elif observation_type == "hybrid":
-        # SB3's CombinedExtractor auto-applies for Dict spaces
-        # with mixed image + vector keys
         return {
+            'features_extractor_class': HybridFeaturesExtractor,
+            'features_extractor_kwargs': {'features_dim': 512},
             'net_arch': dict(pi=[256, 128], vf=[256, 128]),
             'activation_fn': nn.ReLU,
         }
