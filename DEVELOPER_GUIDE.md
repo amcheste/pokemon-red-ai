@@ -24,8 +24,8 @@ training pipeline (RecurrentPPO + W&B + alerts), a statistical
 analysis layer (rliable bootstrap CIs), and live monitoring
 dashboards (Streamlit).
 
-The codebase is also fully usable as a generic Pokémon Red RL toolkit
-— most of the research apparatus is opt-in.
+The codebase is also fully usable as a generic Pokémon Red RL toolkit;
+most of the research apparatus is opt-in.
 
 ### Key Design Principles
 
@@ -94,7 +94,7 @@ graph TB
 ### Directory Structure
 
 ```
-pokemon_red_ai/                     # Python package — library + CLI
+pokemon_red_ai/                     # Python package: library + CLI
 ├── analysis/                       # Treatment comparison + plotting
 │   ├── comparison.py               # rliable IQM, learning curves, plots
 │   └── __init__.py
@@ -341,7 +341,7 @@ Rich command-line interface using Click and Rich libraries.
 ## 🔬 Research Apparatus
 
 The components below are layered on top of the core RL toolkit and
-power the paper-grade workflow.  They're opt-in — none are required to
+power the paper-grade workflow.  They're opt-in; none are required to
 train an agent.
 
 ### Analysis layer (`pokemon_red_ai.analysis`)
@@ -358,13 +358,13 @@ from pokemon_red_ai.analysis.comparison import (
 )
 ```
 
-- **`treatment_summary_table(runs, n_boot=2000)`** — IQM with 95%
+- **`treatment_summary_table(runs, n_boot=2000)`**: IQM with 95%
   percentile-bootstrap CI per treatment.  Pure-numpy implementation,
   mathematically equivalent to `rliable`'s stratified bootstrap but
   without that runtime dependency.
-- **`learning_curves_with_bands(runs)`** — per-treatment mean ± std
+- **`learning_curves_with_bands(runs)`**: per-treatment mean ± std
   curves, aligned to the shortest seed, smoothable.
-- **`milestone_first_episode(runs)`** — for each pre-registered event
+- **`milestone_first_episode(runs)`**: for each pre-registered event
   flag, the median (or min / mean) episode at which each treatment
   first triggered it.
 
@@ -381,8 +381,8 @@ the locked statistical methodology.
 | `MonitoringCallback` | Extends `WandbCallback` with map heatmaps, event-flag tracking, screen captures, and `dashboard_state.json` snapshot for the local Streamlit dashboard |
 
 The `MONITORED_INFO_KEYS` tuple is the contract between the env's
-`info` dict and the SB3 `Monitor` wrapper's `info_keywords` argument —
-adding a metric requires updating that tuple in lockstep with the env.
+`info` dict and the SB3 `Monitor` wrapper's `info_keywords` argument.
+Adding a metric requires updating that tuple in lockstep with the env.
 
 ### Alerting (`pokemon_red_ai.training.alerts`)
 
@@ -403,9 +403,9 @@ callback = TrainingAlertCallback(channels=channels_from_config(cfg))
 
 ### Streamlit dashboards
 
-- **`scripts/monitor.py`** — single-run dashboard.  Reads
+- **`scripts/monitor.py`**: single-run dashboard.  Reads
   `dashboard_state.json` + the SB3 `monitor.csv`.  Auto-refresh.
-- **`scripts/compare.py`** — multi-run treatment comparison.  Auto-
+- **`scripts/compare.py`**: multi-run treatment comparison.  Auto-
   groups by treatment from run names, renders learning curves, IQM
   tables, milestone race, with PDF/SVG/PNG export buttons for figures.
 

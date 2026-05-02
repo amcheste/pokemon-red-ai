@@ -1,4 +1,4 @@
-# Model Card — Pokémon Red AI
+# Model Card: Pokémon Red AI
 
 This is a placeholder model card. It will be populated once the first paper-grade models are trained and released. The structure follows Mitchell et al. 2019, *Model Cards for Model Reporting*.
 
@@ -8,11 +8,11 @@ This is a placeholder model card. It will be populated once the first paper-grad
 
 ## Model Details
 
-- **Model name:** *(TBD — will be assigned per main-experiment treatment)*
+- **Model name:** *(TBD: will be assigned per main-experiment treatment)*
 - **Model versions:** `pixel-v1`, `symbolic-v1`, `hybrid-v1` (planned)
 - **Model type:** RecurrentPPO with `{pixel | symbolic | hybrid}` feature extractor
 - **Training algorithm:** Proximal Policy Optimization with LSTM, via `sb3-contrib`'s `RecurrentPPO`
-- **Development date:** *(TBD — first checkpoints expected ~PR #5)*
+- **Development date:** *(TBD: first checkpoints expected ~PR #5)*
 - **Developer:** Alan Chester
 - **License:** MIT (see [LICENSE](LICENSE))
 - **Repository:** https://github.com/amcheste/pokemon-red-ai
@@ -72,7 +72,7 @@ Sample-efficiency curves, ablation tables, and generalization results will be in
 
 - Results apply only to a single game (Pokémon Red). Generalization claims about RL representations more broadly require additional environments and are not made by this paper.
 - Symbolic observations rely on RAM addresses specific to Pokémon Red and are not transferable to other titles without per-game memory mapping.
-- The pre-registered analysis plan exists for a reason — please do not cherry-pick metrics from these checkpoints in follow-up work without re-running with appropriate statistical rigor.
+- The pre-registered analysis plan exists for a reason. Please do not cherry-pick metrics from these checkpoints in follow-up work without re-running with appropriate statistical rigor.
 
 ---
 

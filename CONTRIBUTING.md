@@ -1,7 +1,7 @@
 # Contributing
 
 Thanks for your interest in contributing.  This is an active research
-codebase — we welcome bug reports, fixes, and small enhancements that
+codebase. We welcome bug reports, fixes, and small enhancements that
 fit the project's scope.  For larger changes, please open an issue
 first to discuss design.
 
@@ -50,13 +50,13 @@ or break tests will not be merged.
 
 ## Branch and PR conventions
 
-- **Never commit to `main` or `master`** — always work on a feature
+- **Never commit to `main` or `master`**. Always work on a feature
   branch and open a pull request.
 - Branch names: `feature/<short-description>`, `fix/<short-description>`,
   `docs/<short-description>`, `chore/<short-description>`.
 - Open the PR against `main`.  PRs are routed to `@amcheste` via
   `CODEOWNERS`; leave the assignee field unset.
-- Keep PRs focused — one logical change per PR.  Big mixed-bag PRs
+- Keep PRs focused: one logical change per PR.  Big mixed-bag PRs
   that combine refactors, features, and docs are hard to review and
   often get split anyway.
 - Include a `Test plan` section in the PR body covering what you ran
@@ -67,7 +67,7 @@ or break tests will not be merged.
 - Imperative subject line under 72 characters
   (`Add reward breakdowns to monitoring callback` rather than
   `added reward breakdowns to monitoring callback`).
-- Body explains *why*, not what — the diff explains what.  Wrap the
+- Body explains *why*, not what; the diff explains what.  Wrap the
   body at 72 characters.
 - One logical change per commit.
 
@@ -78,7 +78,7 @@ or break tests will not be merged.
 - Type hints on every public function (`Optional[str]`, `Dict[str, Any]`, etc.)
 - Docstrings on every public class and function.  Args / Returns
   / Raises sections where applicable.
-- Tests for every behaviour change — both the happy path and the
+- Tests for every behaviour change: both the happy path and the
   obvious failure modes
 - No emojis in code, comments, or documentation unless they're part of
   user-facing CLI output that's intended to be visually distinctive
@@ -106,7 +106,7 @@ important:
   in notebooks or scripts)
 - Log every significant training run to
   [`paper/compute_ledger.md`](paper/compute_ledger.md)
-- Don't commit secrets (W&B keys, Slack webhooks, ROM files) — the
+- Don't commit secrets (W&B keys, Slack webhooks, ROM files); the
   `.gitignore` covers the obvious cases but always sanity-check
   `git status` before pushing
 

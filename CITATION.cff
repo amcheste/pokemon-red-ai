@@ -1,7 +1,7 @@
-# Citation File Format — used by GitHub's "Cite this repository" widget.
+# Citation File Format, used by GitHub's "Cite this repository" widget.
 # See https://citation-file-format.github.io/ for the schema.
 cff-version: 1.2.0
-title: "Pokémon Red — A Long-Horizon RL Benchmark"
+title: "Pokémon Red: A Long-Horizon RL Benchmark"
 message: "If you use this software in your research, please cite the working paper below."
 type: software
 authors:

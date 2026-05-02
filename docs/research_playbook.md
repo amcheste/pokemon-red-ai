@@ -1,4 +1,4 @@
-# Pokemon Red RL — Research Playbook
+# Pokemon Red RL: Research Playbook
 
 Everything you (Alan) need to do between right now and EWRL 2026
 submission, in order. Keep this open while you work.
@@ -6,14 +6,14 @@ submission, in order. Keep this open while you work.
 > **Status snapshot**
 > - **Today:** 2026-04-25
 > - **EWRL deadline:** 2026-05-25 (~30 days)
-> - **Done:** M1 (100%), Training Observability (75% — pending PR #26 merge)
+> - **Done:** M1 (100%), Training Observability (75%, pending PR #26 merge)
 > - **Critical path:** You run pilots → I write the paper → you review/submit
-> - **Open PRs:** #26 (AMC-79 — closes Training Observability)
+> - **Open PRs:** #26 (AMC-79, closes Training Observability)
 > - **Linear project:** [pokemon-red-ai](https://linear.app/amcheste/project/pokemon-red-ai)
 
 ---
 
-## Step 0 — Merge PR #26 (5 min, do today)
+## Step 0: Merge PR #26 (5 min, do today)
 
 Closes the Training Observability milestone. Once merged:
 
@@ -28,12 +28,12 @@ training alerts (AMC-78), treatment comparison (AMC-79).
 
 ---
 
-## Step 1 — Pre-pilot prep (1-2 hours, do this week)
+## Step 1: Pre-pilot prep (1-2 hours, do this week)
 
 ### 1a. Verify save state exists
 
-The pilots all start from `post_intro.state` — Pallet Town after Oak's
-intro. Verify it's there:
+The pilots all start from `post_intro.state` (Pallet Town after Oak's
+intro). Verify it's there:
 
 ```bash
 ls -la states/post_intro.state
@@ -51,7 +51,7 @@ If missing, regenerate:
 ./venv/bin/python3 -m wandb login
 ```
 
-Confirm the API key is set up — paste from <https://wandb.ai/authorize>.
+Confirm the API key is set up. Paste from <https://wandb.ai/authorize>.
 
 ### 1c. Configure alerts (recommended)
 
@@ -59,7 +59,7 @@ The training alerts you'll want for unattended runs:
 
 ```bash
 cp configs/alerts.example.yaml configs/alerts.yaml
-# Edit configs/alerts.yaml — at minimum enable desktop, optionally Slack
+# Edit configs/alerts.yaml: at minimum enable desktop, optionally Slack
 ```
 
 Verify it parses:
@@ -83,7 +83,7 @@ the 10M-step pilots (rough estimate, varies 2x with hardware). Options:
 | Your local GPU | Free, your time | Best if you have RTX 3080/4080+ |
 | RunPod (RTX 4090) | ~$0.40/hr × 270 = ~$110 | Spin up community pods on demand |
 | Lambda Cloud | ~$0.50/hr × 270 = ~$135 | More reliable than RunPod |
-| Google TRC | Free (TPU v3) | Apply at <https://sites.research.google/trc/about/>, requires JAX rewrite — skip for EWRL |
+| Google TRC | Free (TPU v3) | Apply at <https://sites.research.google/trc/about/>, requires JAX rewrite, skip for EWRL |
 
 **Recommendation:** Run pilots on your local hardware to validate, push
 to a cloud GPU only if local timing is too slow.
@@ -116,7 +116,7 @@ If both produce data and you get at least one alert ping, you're ready.
 
 ---
 
-## Step 2 — Run the 9 pilots (the long part, ~5-10 days)
+## Step 2: Run the 9 pilots (the long part, ~5-10 days)
 
 3 treatments × 3 seeds = 9 runs of ~10M steps each. Plan: launch them
 sequentially (or in parallel if you have multiple GPUs), monitor live,
@@ -124,7 +124,7 @@ let alerts ping you on milestones.
 
 ### Suggested order
 
-Run pixel first — fastest treatment (smallest observation), gives you a
+Run pixel first: fastest treatment (smallest observation), gives you a
 known-good baseline before symbolic and hybrid burn compute.
 
 ```
@@ -175,7 +175,7 @@ sidebar). Watch:
 - Event flags ticking on
 - Player level rising
 
-Also check the W&B run page — gives you remote access from any browser.
+Also check the W&B run page; it gives you remote access from any browser.
 
 ### When to kill a run early
 
@@ -184,7 +184,7 @@ A pilot is **not worth continuing** if after ~2M steps:
 - Zero new maps discovered (stuck on map 0)
 - Zero event flags triggered
 
-Kill it (`Ctrl-C` — saves an `interrupted_model.zip` for debugging) and
+Kill it (`Ctrl-C`, saves an `interrupted_model.zip` for debugging) and
 start the next one. Note in the W&B run notes why you killed it.
 
 ### Tagging in W&B
@@ -214,7 +214,7 @@ When all 9 are done, mark AMC-63/64/65 as Done in Linear.
 
 ---
 
-## Step 3 — Analyze results (1-2 days, after all pilots done)
+## Step 3: Analyze results (1-2 days, after all pilots done)
 
 ### 3a. Live comparison (Streamlit)
 
@@ -224,12 +224,12 @@ streamlit run scripts/compare.py -- --runs-dir ./training_output
 
 In the sidebar: select all 9 runs. The app auto-groups by treatment
 (based on the run name prefix). Look at:
-- **Learning curves** — does any treatment dominate?
-- **IQM table** — does any 95% CI exclude the others?
-- **Final-performance bars** — does the ranking match the curves?
-- **Milestone race** — which treatment hits BEAT_BROCK first?
+- **Learning curves**: does any treatment dominate?
+- **IQM table**: does any 95% CI exclude the others?
+- **Final-performance bars**: does the ranking match the curves?
+- **Milestone race**: which treatment hits BEAT_BROCK first?
 
-Click PDF download buttons on each figure — these go straight into the
+Click PDF download buttons on each figure. These go straight into the
 paper.
 
 ### 3b. Generate paper figures
@@ -246,7 +246,7 @@ The publication-quality figures live behind `scripts/analyze.py`:
 ```
 
 This produces:
-- `paper/figures/aggregate_metrics.pdf` — IQM + 95% CIs
+- `paper/figures/aggregate_metrics.pdf`: IQM + 95% CIs
 - `paper/figures/performance_profiles.pdf`
 - `paper/figures/probability_of_improvement.pdf`
 - `paper/figures/sample_efficiency.pdf`
@@ -259,7 +259,7 @@ with co-authors when the paper draft is ready.
 
 ---
 
-## Step 4 — Write the EWRL paper (AMC-67, ~1 week)
+## Step 4: Write the EWRL paper (AMC-67, ~1 week)
 
 I (Claude) can do most of this once the pilot results are in. Process:
 
@@ -282,7 +282,7 @@ paper/
 ```
 
 I'll draft sections 1-4 (intro, related work, environment, methods) now
-since they don't depend on results — just need pilot numbers later.
+since they don't depend on results, just need pilot numbers later.
 
 **You decide:** want me to set up the LaTeX scaffolding + draft sections
 1-4 in parallel with your pilot runs? Say "yes do paper scaffolding" and
@@ -306,7 +306,7 @@ runs.
 
 ### 4d. Get a second opinion (1 day)
 
-Ideally before submitting — even a quick read by:
+Ideally before submitting, even a quick read by:
 - An AI/ML colleague at Oracle (paid attention to IP separation, see Step 5)
 - Or a friend in academia
 - Or post the abstract for feedback in /r/MachineLearning
@@ -330,7 +330,7 @@ Per the M2 exit criteria. Categories: `cs.LG`, `cs.AI`. License: CC BY 4.0.
 
 ---
 
-## Step 5 — Research operations (parallel, do whenever)
+## Step 5: Research operations (parallel, do whenever)
 
 These don't block pilots/paper but need to be done before the next
 papers (M3-M5). Tackle them during pilot wall-clock time.
@@ -384,7 +384,7 @@ benefit from an academic co-author.
 | 2026-05-22 → 25 | Final tweaks, submit |
 | **2026-05-25** | **EWRL deadline** |
 
-**~14 days slack** — comfortable but not generous. If pilots take 14 days
+**~14 days slack**: comfortable but not generous. If pilots take 14 days
 instead of 10 (slow GPU, debugging), slack drops to 10 days. If you
 slip a week, slack is gone.
 
@@ -410,7 +410,7 @@ When all of these are checked, M2 is closed and you can start M3:
 
 ---
 
-## Quick reference — commands
+## Quick reference: commands
 
 ```bash
 # Sync to latest main
@@ -446,14 +446,14 @@ streamlit run scripts/compare.py -- --runs-dir ./training_output
 
 ---
 
-## When you get stuck — ping me
+## When you get stuck: ping me
 
 If anything in this playbook breaks or is unclear, just paste the error
 or question into a Claude session. I have full context on the codebase
 and can debug, refactor, or rewrite sections of this document on demand.
 
 For paper-specific questions (especially LaTeX, citations, framing), I
-can also draft alternative phrasings or restructure sections — just
+can also draft alternative phrasings or restructure sections. Just
 share the current draft.
 
 Good luck. Ship it. 🚀
