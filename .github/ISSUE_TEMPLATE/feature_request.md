@@ -8,7 +8,7 @@ assignees: ''
 
 ## Problem
 
-<!-- What problem are you trying to solve?  Be specific — "training is
+<!-- What problem are you trying to solve?  Be specific: "training is
      slow" is harder to act on than "PyBoy stepping is the bottleneck
      in profiling, accounting for 80% of wall clock". -->
 

@@ -37,5 +37,5 @@ assignees: ''
 
 ## Additional context
 
-<!-- Anything else worth knowing — recent changes, multi-process setup,
+<!-- Anything else worth knowing: recent changes, multi-process setup,
      non-standard hardware, etc. -->

@@ -1,5 +1,5 @@
 <!--
-Thanks for opening a PR!  Fill in the sections below — leave any
+Thanks for opening a PR!  Fill in the sections below. Leave any
 heading present but write "n/a" if a section doesn't apply.  See
 CONTRIBUTING.md for branch / commit / scope conventions.
 -->

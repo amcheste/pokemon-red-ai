@@ -1,11 +1,11 @@
-# Pokémon Red — Reinforcement Learning Toolkit
+# Pokémon Red: Reinforcement Learning Toolkit
 
 **A Gymnasium-compatible environment and training pipeline for
 *Pokémon Red*, built on PyBoy, Stable-Baselines3, and `sb3-contrib`.**
 
-[![Tests](https://img.shields.io/badge/tests-833%20passing-brightgreen)](tests/)
-[![Python](https://img.shields.io/badge/python-3.13-blue)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-833%20passing-0B0B0C)](tests/)
+[![Python](https://img.shields.io/badge/python-3.13-0B0B0C)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-1F4D3A)](LICENSE)
 
 This repository provides everything needed to train RL agents to play
 *Pokémon Red*: an emulator-backed Gymnasium environment with three
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 # 2. Generate save states (one-time; requires a legal Pokémon Red ROM)
 python3 scripts/create_save_states.py --rom path/to/PokemonRed.gb
 
-# 3. Smoke test (~5 min — verify the pipeline end-to-end)
+# 3. Smoke test (~5 min, verify the pipeline end-to-end)
 python3 scripts/train.py \
     --rom path/to/PokemonRed.gb \
     --save-state states/s0_post_intro.state \
@@ -69,8 +69,8 @@ For unattended overnight runs, configure desktop / Slack / email alerts:
 cp configs/alerts.example.yaml configs/alerts.yaml   # then enable channels
 ```
 
-The full operational playbook — including compute estimates and a
-parallel-run strategy on Apple Silicon — is in
+The full operational playbook (including compute estimates and a
+parallel-run strategy on Apple Silicon) is in
 [`docs/research_playbook.md`](docs/research_playbook.md).
 
 ---
@@ -135,8 +135,8 @@ work).
 | Tool | Use case |
 |------|----------|
 | Weights & Biases (auto-enabled in `train.py`) | Cloud telemetry; per-treatment run grouping; check from any device |
-| `streamlit run scripts/monitor.py` | Single-run live dashboard — reward curves, event flags, maps, level / party / money |
-| `streamlit run scripts/compare.py` | Multi-run comparison — IQM table, learning-curve overlays with 95% bands, milestone race |
+| `streamlit run scripts/monitor.py` | Single-run live dashboard: reward curves, event flags, maps, level / party / money |
+| `streamlit run scripts/compare.py` | Multi-run comparison: IQM table, learning-curve overlays with 95% bands, milestone race |
 | `pokemon_red_ai.training.alerts` | Desktop / Slack / email alerts on first badge, reward plateau, training crash |
 
 ## Use as a library
@@ -184,7 +184,7 @@ Memory addresses verified against the
 
 ## License & ROM
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
 
 You must own a legal copy of the Pokémon Red ROM. This repository does
 not distribute, link to, or facilitate acquisition of any copyrighted
