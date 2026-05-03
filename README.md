@@ -1,3 +1,5 @@
+![Pokémon Red RL Toolkit](docs/images/banner.png)
+
 # Pokémon Red: Reinforcement Learning Toolkit
 
 **A Gymnasium-compatible environment and training pipeline for
