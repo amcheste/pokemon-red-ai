@@ -56,24 +56,17 @@ _PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+from pokemon_red_ai.analysis import (
+    TREATMENT_COLORS,
+    TREATMENT_DISPLAY,
+    UNKNOWN_COLOR,
+)
+
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────
-
-# Treatment display names and colors (consistent across all figures)
-TREATMENT_DISPLAY = {
-    "pixel": "Pixel",
-    "symbolic": "Symbolic",
-    "hybrid": "Hybrid",
-}
-
-TREATMENT_COLORS = {
-    "pixel": "#E24A33",      # warm red
-    "symbolic": "#348ABD",   # blue
-    "hybrid": "#988ED5",     # purple
-}
 
 # Metrics we extract from eval.py JSON and feed to rliable
 METRIC_KEYS = {
@@ -457,7 +450,7 @@ def _setup_matplotlib() -> None:
 
 def _get_color(treatment: str) -> str:
     """Get the color for a treatment, with a fallback."""
-    return TREATMENT_COLORS.get(treatment, "#333333")
+    return TREATMENT_COLORS.get(treatment, UNKNOWN_COLOR)
 
 
 def _get_label(treatment: str) -> str:

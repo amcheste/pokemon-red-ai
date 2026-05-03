@@ -2,7 +2,7 @@
 
 Welcome to the Pokemon Red AI developer guide! This document provides comprehensive information about the codebase architecture, design patterns, and development practices to help you contribute effectively to the project.
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [Project Overview](#project-overview)
 - [Architecture Overview](#architecture-overview)
@@ -14,7 +14,7 @@ Welcome to the Pokemon Red AI developer guide! This document provides comprehens
 - [Contributing Guidelines](#contributing-guidelines)
 - [API Reference](#api-reference)
 
-## 🎯 Project Overview
+## Project Overview
 
 Pokemon Red AI is the research codebase backing a 3-paper cascade
 (EWRL 2026 → NeurIPS 2026 workshop → TMLR) on observation
@@ -36,7 +36,7 @@ most of the research apparatus is opt-in.
 5. **Reproducibility**: Pre-registered analysis plan, locked event-flag set, deterministic eval
 6. **Extensibility**: Easy to add new features without breaking existing functionality
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 The project follows a layered architecture pattern:
 
@@ -145,7 +145,7 @@ docs/research_playbook.md           # Operational runbook
 tests/                              # 833 unit + integration tests
 ```
 
-## 🔧 Core Components
+## Core Components
 
 ### 1. Game Interface Layer (`pokemon_red_ai.game`)
 
@@ -338,7 +338,7 @@ Rich command-line interface using Click and Rich libraries.
 - `init`: Initialize new projects
 - `doctor`: System health checks
 
-## 🔬 Research Apparatus
+## Research Apparatus
 
 The components below are layered on top of the core RL toolkit and
 power the paper-grade workflow.  They're opt-in; none are required to
@@ -429,7 +429,7 @@ command;  `scripts/mirror_paper_to_overleaf.sh` keeps git → Overleaf
 in sync.  Both depend on the
 [overleaf-mcp-server](https://github.com/amcheste/overleaf-mcp).
 
-## 🎨 Design Patterns
+## Design Patterns
 
 ### 1. Strategy Pattern
 
@@ -497,7 +497,7 @@ def press_button_basic(pyboy, button: str):
         pyboy.send_input(button_id)
 ```
 
-## 🔄 Data Flow
+## Data Flow
 
 ### Training Data Flow
 
@@ -554,7 +554,7 @@ flowchart LR
 5. **Action**: RL model outputs button press
 6. **Game Response**: PyBoy executes action and updates state
 
-## 🧪 Testing Strategy
+## Testing Strategy
 
 ### Test Organization
 
@@ -629,7 +629,7 @@ def test_agent_step_performance(benchmark_runner):
     assert result['mean'] < 0.05  # Under 50ms
 ```
 
-## 💻 Development Setup
+## Development Setup
 
 ### Prerequisites
 
@@ -675,7 +675,7 @@ mypy pokemon_red_ai/
 5. **Check Style**: Run linting and formatting tools
 6. **Create PR**: Submit for review
 
-## 🤝 Contributing Guidelines
+## Contributing Guidelines
 
 ### Code Style
 
@@ -816,7 +816,7 @@ def example_function(param: str) -> str:
         raise RuntimeError(f"Failed to process {param}: {e}") from e
 ```
 
-## 📚 API Reference
+## API Reference
 
 ### Core Classes Quick Reference
 
@@ -874,7 +874,7 @@ trainer = PokemonTrainer("game.gb", "./training/")
 trainer.train(total_timesteps=50000)
 ```
 
-## 🔍 Debugging Tips
+## Debugging Tips
 
 ### Common Issues
 
@@ -919,7 +919,7 @@ trainer.train(
 
 ---
 
-## 🎉 Conclusion
+## Conclusion
 
 This developer guide should give you a solid foundation for contributing to Pokemon Red AI. The modular architecture makes it easy to add new features while maintaining backward compatibility. Remember to:
 
@@ -929,6 +929,4 @@ This developer guide should give you a solid foundation for contributing to Poke
 4. Consider backward compatibility when making changes
 5. Use the existing error handling and logging patterns
 
-For questions or discussions about the architecture, feel free to open an issue or start a discussion on GitHub!
-
-Happy coding! 🎮🤖
+For questions or discussions about the architecture, open an issue or start a discussion on GitHub.

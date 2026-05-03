@@ -1266,7 +1266,7 @@ class MonitoringCallback(WandbCallback):
             counts = [r[1] for r in rows]
 
             fig, ax = plt.subplots(figsize=(6, max(2.5, 0.25 * len(rows))))
-            ax.barh(map_ids, counts, color="#3b82f6")
+            ax.barh(map_ids, counts, color="#0B0B0C")  # ink (alanchester-brand)
             ax.set_xlabel("Episodes that visited map")
             ax.set_ylabel("map_id")
             ax.set_title("Map exploration heatmap")

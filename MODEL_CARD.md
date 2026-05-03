@@ -2,7 +2,7 @@
 
 This is a placeholder model card. It will be populated once the first paper-grade models are trained and released. The structure follows Mitchell et al. 2019, *Model Cards for Model Reporting*.
 
-> ⚠️ **PR #0 placeholder.** No models have been trained against this card yet. Numbers will be filled in starting in PR #5 (first main-experiment seed completes).
+> **PR #0 placeholder.** No models have been trained against this card yet. Numbers will be filled in starting in PR #5 (first main-experiment seed completes).
 
 ---
 
