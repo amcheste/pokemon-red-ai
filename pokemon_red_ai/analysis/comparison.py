@@ -60,17 +60,24 @@ TREATMENT_DISPLAY: Dict[str, str] = {
     "minimal": "Minimal",
 }
 
+# Brand-aligned categorical palette (alanchester-brand tokens/colors.css).
+# Three distinguishable values across lightness and hue, all from the
+# brand's neutral + accent-alt set. Hunter green (--ac-accent) is reserved
+# for goal lines, IQM markers, and other "data, pivot, δ" overlays per
+# the brand's accent rule, so it does not appear on categorical lines.
 TREATMENT_COLORS: Dict[str, str] = {
-    "pixel": "#E24A33",      # warm red
-    "symbolic": "#348ABD",   # blue
-    "hybrid": "#988ED5",     # purple
-    "multi_modal": "#777777",
-    "screen_only": "#999999",
-    "minimal": "#bbbbbb",
+    "pixel": "#2B2B2E",      # graphite
+    "symbolic": "#8A8A8E",   # muted
+    "hybrid": "#B45A3C",     # rust (--ac-accent-alt)
+    # legacy/aux observation types from older runs, faded so they
+    # don't compete with the primary three on shared figures
+    "multi_modal": "#A8A6A0",
+    "screen_only": "#BCBAB4",
+    "minimal": "#D4D2CC",
 }
 
 UNKNOWN_TREATMENT = "unknown"
-UNKNOWN_COLOR = "#555555"
+UNKNOWN_COLOR = "#E6E4DE"  # mist
 
 DEFAULT_BOOTSTRAP_REPS = 2_000
 DEFAULT_FIGURE_DPI = 300
