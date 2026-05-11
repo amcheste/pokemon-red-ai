@@ -1,4 +1,6 @@
-![Pokémon Red RL Toolkit](docs/images/banner.png)
+<div align="center">
+
+<img src="docs/images/banner.png" alt="Pokémon Red RL Toolkit" width="100%" />
 
 # Pokémon Red: Reinforcement Learning Toolkit
 
@@ -8,6 +10,10 @@
 [![Tests](https://img.shields.io/badge/tests-833%20passing-0B0B0C)](tests/)
 [![Python](https://img.shields.io/badge/python-3.13-0B0B0C)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-1F4D3A)](LICENSE)
+
+</div>
+
+---
 
 This repository provides everything needed to train RL agents to play
 *Pokémon Red*: an emulator-backed Gymnasium environment with three
