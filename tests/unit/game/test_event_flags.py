@@ -48,11 +48,14 @@ class TestEventFlagConstants:
     def test_event_flags_end(self):
         assert EVENT_FLAGS_END == EVENT_FLAGS_START + EVENT_FLAGS_LENGTH
 
-    def test_boulder_path_has_18_flags(self):
-        assert len(BOULDER_PATH_FLAGS) == 18
+    def test_boulder_path_has_15_flags(self):
+        # 15 verified flags from pret/pokered.  Original plan §9 had 18 but
+        # 4 referenced events that don't exist in the disassembly; the
+        # correction is logged in pokemon-rl-paper/compute_ledger.md.
+        assert len(BOULDER_PATH_FLAGS) == 15
 
     def test_num_boulder_flags_matches(self):
-        assert NUM_BOULDER_FLAGS == 18
+        assert NUM_BOULDER_FLAGS == 15
 
     def test_reward_weights_cover_all_flags(self):
         """Every pre-registered flag must have a reward weight."""
@@ -77,6 +80,38 @@ class TestEventFlagConstants:
 
     def test_battle_state_address(self):
         assert BATTLE_STATE_ADDR == 0xD057
+
+    def test_flag_ids_match_pret_pokered(self):
+        """Lock the 15 pre-registered flag IDs against pret/pokered.
+
+        Any drift here means either the disassembly changed (very unlikely —
+        pret/pokered is stable) or someone modified the flag set without
+        updating the analysis plan.  If this test fails, run
+        ``scripts/verify_event_flag_ids.py`` to regenerate from the
+        canonical source and update both code and plan together.
+        """
+        # IDs resolved from constants/event_constants.asm by emulating the
+        # rgbds const_def/const/const_skip/const_next macros.
+        canonical = {
+            'EVENT_FOLLOWED_OAK_INTO_LAB':            0x000,
+            'EVENT_GOT_TOWN_MAP':                     0x018,
+            'EVENT_GOT_STARTER':                      0x022,
+            'EVENT_BATTLED_RIVAL_IN_OAKS_LAB':        0x023,
+            'EVENT_GOT_POKEBALLS_FROM_OAK':           0x024,
+            'EVENT_GOT_POKEDEX':                      0x025,
+            'EVENT_GOT_OAKS_PARCEL':                  0x039,
+            'EVENT_BEAT_PEWTER_GYM_TRAINER_0':        0x072,
+            'EVENT_GOT_TM34':                         0x076,
+            'EVENT_BEAT_BROCK':                       0x077,
+            'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_0':   0x562,
+            'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_1':   0x563,
+            'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_2':   0x564,
+            'EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE':    0x525,
+            'EVENT_GOT_BIKE_VOUCHER':                 0x151,
+        }
+        assert BOULDER_PATH_FLAGS == canonical, (
+            "Flag IDs drifted from pret/pokered.  See docstring."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -103,13 +138,31 @@ class TestFlagAddressAndBit:
         assert addr == EVENT_FLAGS_START + 1
         assert bit == 0
 
-    def test_flag_0x045(self):
-        """The first pre-registered flag."""
-        addr, bit = _flag_address_and_bit(0x045)
-        expected_byte = 0x045 // 8  # = 8
-        expected_bit = 0x045 % 8    # = 5
+    def test_flag_0x022_got_starter(self):
+        """EVENT_GOT_STARTER — verified ID 0x022 from pret/pokered."""
+        addr, bit = _flag_address_and_bit(0x022)
+        expected_byte = 0x022 // 8  # = 4
+        expected_bit = 0x022 % 8    # = 2
         assert addr == EVENT_FLAGS_START + expected_byte
         assert bit == expected_bit
+        # Cross-check: BOULDER_PATH_FLAGS records the same ID.
+        assert BOULDER_PATH_FLAGS['EVENT_GOT_STARTER'] == 0x022
+
+    def test_flag_0x077_beat_brock(self):
+        """EVENT_BEAT_BROCK — verified ID 0x077 from pret/pokered."""
+        addr, bit = _flag_address_and_bit(0x077)
+        # Byte 0x77//8 = 14, bit 0x77%8 = 7
+        assert addr == EVENT_FLAGS_START + 14
+        assert bit == 7
+        assert BOULDER_PATH_FLAGS['EVENT_BEAT_BROCK'] == 0x077
+
+    def test_flag_0x562_viridian_trainer_0(self):
+        """High-ID event (>0x200) lives near the top of the flag array."""
+        addr, bit = _flag_address_and_bit(0x562)
+        # Byte 0x562//8 = 0xAC = 172, bit 0x562%8 = 2
+        assert addr == EVENT_FLAGS_START + 172
+        assert bit == 2
+        assert BOULDER_PATH_FLAGS['EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_0'] == 0x562
 
 
 # ---------------------------------------------------------------------------
@@ -129,34 +182,34 @@ class TestReadEventFlag:
 
     def test_flag_not_set(self):
         mem = self._mock_memory({})
-        assert read_event_flag(mem, 0x045) is False
+        assert read_event_flag(mem, 0x022) is False
 
     def test_flag_is_set(self):
-        # Flag 0x045 → byte offset 8 → address 0xD74F, bit 5
-        addr = EVENT_FLAGS_START + (0x045 // 8)
-        bit = 0x045 % 8
+        # Flag 0x022 → byte offset 8 → address 0xD74F, bit 5
+        addr = EVENT_FLAGS_START + (0x022 // 8)
+        bit = 0x022 % 8
         mem = self._mock_memory({addr: (1 << bit)})
-        assert read_event_flag(mem, 0x045) is True
+        assert read_event_flag(mem, 0x022) is True
 
     def test_other_bits_dont_interfere(self):
         """Setting all bits except the target should return False."""
-        addr = EVENT_FLAGS_START + (0x045 // 8)
-        bit = 0x045 % 8
+        addr = EVENT_FLAGS_START + (0x022 // 8)
+        bit = 0x022 % 8
         all_except = 0xFF ^ (1 << bit)
         mem = self._mock_memory({addr: all_except})
-        assert read_event_flag(mem, 0x045) is False
+        assert read_event_flag(mem, 0x022) is False
 
     def test_all_bits_set_returns_true(self):
-        addr = EVENT_FLAGS_START + (0x045 // 8)
+        addr = EVENT_FLAGS_START + (0x022 // 8)
         mem = self._mock_memory({addr: 0xFF})
-        assert read_event_flag(mem, 0x045) is True
+        assert read_event_flag(mem, 0x022) is True
 
     def test_memory_error_returns_false(self):
         """If memory read fails, flag should be False (not crash)."""
         mock = Mock()
         mock.__getitem__ = Mock(side_effect=Exception("memory error"))
         # read_memory_value catches exceptions and returns 0
-        assert read_event_flag(mock, 0x045) is False
+        assert read_event_flag(mock, 0x022) is False
 
 
 # ---------------------------------------------------------------------------
@@ -164,14 +217,14 @@ class TestReadEventFlag:
 # ---------------------------------------------------------------------------
 
 class TestReadBoulderPathFlags:
-    """Test reading all 18 pre-registered flags at once."""
+    """Test reading all 15 pre-registered flags at once."""
 
     def test_all_false_on_fresh_game(self):
         mock = Mock()
         mock.__getitem__ = Mock(return_value=0)
         flags = read_boulder_path_flags(mock)
 
-        assert len(flags) == 18
+        assert len(flags) == 15
         assert all(v is False for v in flags.values())
 
     def test_specific_flag_true(self):
@@ -192,9 +245,12 @@ class TestReadBoulderPathFlags:
 
         assert flags[flag_name] is True
         # Other flags that share the same byte might also be True if
-        # their bit is coincidentally set; just check the target
+        # their bit is coincidentally set; just check the target.
+        # 0xD74B/2 is GOT_STARTER; same byte holds BATTLED_RIVAL_IN_OAKS_LAB,
+        # GOT_POKEBALLS_FROM_OAK, GOT_POKEDEX (bits 3,4,5).  So worst case
+        # 4 of 15 flags read True; require at least 11 False.
         false_count = sum(1 for v in flags.values() if not v)
-        assert false_count >= 16  # At most 2 could share the byte
+        assert false_count >= 11
 
     def test_count_with_no_flags(self):
         mock = Mock()
@@ -205,7 +261,7 @@ class TestReadBoulderPathFlags:
         """Set every byte in the event array to 0xFF."""
         mock = Mock()
         mock.__getitem__ = Mock(return_value=0xFF)
-        assert count_boulder_path_flags(mock) == 18
+        assert count_boulder_path_flags(mock) == 15
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +431,7 @@ class TestEventFlagTracker:
         tracker.reset(memory=self._make_memory([]))
 
         tracker.update(self._make_memory(['EVENT_GOT_STARTER']))
-        assert tracker.progress_fraction == pytest.approx(1.0 / 18)
+        assert tracker.progress_fraction == pytest.approx(1.0 / 15)
 
     def test_triggered_flags_property(self):
         tracker = EventFlagTracker()
