@@ -14,7 +14,7 @@ Usage (full research run)::
 
     python scripts/train.py \
         --rom path/to/PokemonRed.gb \
-        --save-state states/post_intro.state \
+        --save-state save_states/s0_post_intro.state \
         --algorithm RecurrentPPO \
         --reward-strategy events \
         --total-timesteps 1_000_000 \

@@ -22,9 +22,12 @@ with the cascade are most likely to be merged:
 Out of scope without prior discussion:
 
 - Changes that alter the pre-registered analysis plan
-  ([`paper/analysis_plan.md`](paper/analysis_plan.md))
-- Changes to the 18 pre-registered event flags
-  ([`pokemon_red_ai/game/event_flags.py`](pokemon_red_ai/game/event_flags.py))
+  ([`pokemon-rl-paper/analysis_plan.md`](https://github.com/amcheste/pokemon-rl-paper/blob/main/analysis_plan.md);
+  paper LaTeX lives in a private sibling repo)
+- Changes to the 15 pre-registered event flags
+  ([`pokemon_red_ai/game/event_flags.py`](pokemon_red_ai/game/event_flags.py)) —
+  any new ID must be verified against the pret/pokered disassembly via
+  `scripts/verify_event_flag_ids.py`
 - New reward components that retroactively affect already-completed runs
 
 ## Development setup
@@ -45,8 +48,10 @@ Run the test suite:
 ./venv/bin/python3 -m pytest -k comparison    # specific module
 ```
 
-All 833 tests should pass on a clean checkout.  PRs that drop coverage
-or break tests will not be merged.
+The test suite should pass on a clean checkout (run `pytest tests/`
+for the current count; the GitHub Actions workflow runs this matrix
+across Python 3.10–3.12 on every PR).  PRs that drop coverage or break
+tests will not be merged.
 
 ## Branch and PR conventions
 
@@ -105,7 +110,8 @@ important:
 - Use `scripts/eval.py` for evaluation results (no ad-hoc eval loops
   in notebooks or scripts)
 - Log every significant training run to
-  [`paper/compute_ledger.md`](paper/compute_ledger.md)
+  [`pokemon-rl-paper/compute_ledger.md`](https://github.com/amcheste/pokemon-rl-paper/blob/main/compute_ledger.md)
+  (private sibling repo)
 - Don't commit secrets (W&B keys, Slack webhooks, ROM files); the
   `.gitignore` covers the obvious cases but always sanity-check
   `git status` before pushing
