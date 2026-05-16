@@ -60,6 +60,14 @@ if _PROJECT_ROOT not in sys.path:
 from pokemon_red_ai.environment import PokemonRedGymEnv
 from pokemon_red_ai.game.memory import MAP_IDS, BADGE_FLAGS
 
+# Eval reproducibility: locked deterministic=True per analysis_plan.md S3.
+# seed_everything covers Python random, NumPy, torch (CPU/CUDA/MPS),
+# PYTHONHASHSEED, and SB3 — strictly more than the previous np.random.seed.
+try:
+    from scripts.seed_utils import seed_everything
+except ImportError:
+    from seed_utils import seed_everything
+
 logger = logging.getLogger(__name__)
 
 
@@ -318,8 +326,11 @@ def evaluate_checkpoint(
         save_state_path=str(save_state),
     )
 
-    # Set seed for reproducibility
-    np.random.seed(seed)
+    # Set seed for reproducibility.  deterministic_torch=True enforces
+    # bit-reproducible torch ops — slower than training, but eval is
+    # short (20 episodes) and reproducibility is the whole point.
+    seed_everything(seed, deterministic_torch=True)
+    env.seed(seed)
 
     # Run episodes
     logger.info("=" * 60)

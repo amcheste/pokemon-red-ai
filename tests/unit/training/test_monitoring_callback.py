@@ -273,7 +273,8 @@ class TestRolloutEndExtras:
         assert any(row[0] == 1 for row in table.data)
         assert any(row[0] == 2 for row in table.data)
 
-    def test_logs_flag_progress_for_all_18(self, monitoring_cb, mock_wandb):
+    def test_logs_flag_progress_for_all_flags(self, monitoring_cb, mock_wandb):
+        from pokemon_red_ai.game.event_flags import NUM_BOULDER_FLAGS
         self._populate(monitoring_cb)
         monitoring_cb.num_timesteps = 2048
         monitoring_cb._on_rollout_end()
@@ -281,7 +282,7 @@ class TestRolloutEndExtras:
         logged = _merge_all_logs(mock_wandb)
         assert "game/flag_progress" in logged
         table = logged["game/flag_progress"]
-        assert len(table.data) == 18  # All pre-registered flags listed
+        assert len(table.data) == NUM_BOULDER_FLAGS  # All pre-registered flags listed
         assert "game/unique_flags_ever" in logged
         assert logged["game/unique_flags_ever"] == 1
 
@@ -327,15 +328,16 @@ class TestDashboardStateSnapshot:
         assert snapshot["flag_first_triggered"]["EVENT_GOT_STARTER"] == 1
         assert len(snapshot["episodes"]) == 1
 
-    def test_snapshot_contains_all_18_flags(self, monitoring_cb):
+    def test_snapshot_contains_all_flags(self, monitoring_cb):
+        from pokemon_red_ai.game.event_flags import NUM_BOULDER_FLAGS
         monitoring_cb.num_timesteps = 100
         monitoring_cb._on_rollout_end()
 
         with open(monitoring_cb.dashboard_state_path) as fh:
             snapshot = json.load(fh)
 
-        # Even before any episode, snapshot lists all 18 flags with count 0
-        assert len(snapshot["flag_trigger_counts"]) == 18
+        # Even before any episode, snapshot lists every pre-registered flag.
+        assert len(snapshot["flag_trigger_counts"]) == NUM_BOULDER_FLAGS
         assert all(v == 0 for v in snapshot["flag_trigger_counts"].values())
 
     def test_write_failure_is_silent(self, monitoring_cb, tmp_path):

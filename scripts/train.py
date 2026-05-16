@@ -67,6 +67,16 @@ from pokemon_red_ai.training.alerts import (
 )
 from pokemon_red_ai.utils import create_directories
 
+# Reproducibility: seed_everything seeds Python random, NumPy, torch (CPU/CUDA),
+# PYTHONHASHSEED, and stable-baselines3 in one place.  Lives in scripts/ so it
+# can be reused from eval.py and other entry points.  Import path works for
+# both ``python scripts/train.py`` (scripts/ on sys.path via __main__) and
+# ``python -m scripts.train`` (project root on sys.path via the insert above).
+try:
+    from scripts.seed_utils import seed_everything
+except ImportError:
+    from seed_utils import seed_everything
+
 logger = logging.getLogger(__name__)
 
 
@@ -234,23 +244,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Seeding
-# ──────────────────────────────────────────────────────────────────────
-
-def set_global_seeds(seed: int) -> None:
-    """Set seeds for numpy, torch, and Python stdlib."""
-    import random
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-    logger.info(f"Global seeds set to {seed}")
-
-
-# ──────────────────────────────────────────────────────────────────────
 # Vectorised environment construction
 # ──────────────────────────────────────────────────────────────────────
 
@@ -324,8 +317,12 @@ def train(args: argparse.Namespace) -> None:
     """Run a full training pipeline."""
 
     # ── Seeding ──────────────────────────────────────────────────────
+    # seed_everything seeds Python random, NumPy, torch (CPU/CUDA), PYTHONHASHSEED,
+    # and SB3's set_random_seed.  The per-rank seeding for SubprocVecEnv workers
+    # happens later via env.seed(args.seed), which sends seed+rank to each
+    # subprocess so parallel envs produce uncorrelated trajectories.
     if args.seed is not None:
-        set_global_seeds(args.seed)
+        seed_everything(args.seed)
 
     # ── Directories ──────────────────────────────────────────────────
     create_directories(args.save_dir)
@@ -353,6 +350,13 @@ def train(args: argparse.Namespace) -> None:
         )
 
     env = _make_vec_env(args, n_envs, reward_config)
+
+    # Per-rank seeding: SubprocVecEnv.seed(seed) sends seed+idx to each child
+    # process, so rank 0 gets args.seed, rank 1 gets args.seed+1, etc.  This
+    # de-correlates parallel envs while keeping the run deterministic given
+    # (args.seed, n_envs).  Skipped if no seed was provided.
+    if args.seed is not None:
+        env.seed(args.seed)
 
     logger.info(
         f"Environment ready  "
