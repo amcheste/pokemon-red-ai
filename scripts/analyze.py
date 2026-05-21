@@ -79,6 +79,11 @@ METRIC_KEYS = {
 # Pre-registered analysis constants (analysis_plan.md S6)
 BOOTSTRAP_REPS = 2_000
 CONFIDENCE_LEVEL = 0.95
+# Bootstrap-resampling seed.  Disclosed in the paper's reproducibility
+# appendix; override at the CLI with --bootstrap-seed for sensitivity
+# analysis.  Different from the *training* seeds — this only governs the
+# resampling, never the trained models.
+BOOTSTRAP_SEED = 42
 
 # Figure defaults
 FIGURE_DPI = 300
@@ -336,6 +341,7 @@ def compute_aggregate_metrics(
 def compute_probability_of_improvement(
     scores_dict: Dict[str, np.ndarray],
     reps: int = BOOTSTRAP_REPS,
+    bootstrap_seed: int = BOOTSTRAP_SEED,
 ) -> Tuple[Dict[Tuple[str, str], float], Dict[Tuple[str, str], np.ndarray]]:
     """
     Compute pairwise Probability of Improvement between all treatments.
@@ -348,6 +354,11 @@ def compute_probability_of_improvement(
     takes two separate arrays and cannot go through
     ``get_interval_estimates``.
 
+    Each pair gets its own RNG sub-stream (seed=bootstrap_seed, then
+    ``rng.spawn``-style children) so the CIs across pairs are
+    statistically independent — previously every pair reseeded with the
+    same constant, correlating the bootstrap samples.
+
     Returns:
         (poi_point, poi_ci): dicts mapping (treatment_a, treatment_b)
         to P(A > B) point estimate and [lo, hi] CI.
@@ -359,6 +370,12 @@ def compute_probability_of_improvement(
     poi_ci: Dict[Tuple[str, str], np.ndarray] = {}
 
     alpha = (1 - CONFIDENCE_LEVEL) / 2  # 0.025 for 95% CI
+
+    # One root SeedSequence for the whole call; each pair spawns a child
+    # so its bootstrap samples are statistically independent of every
+    # other pair but the whole computation is still deterministic given
+    # ``bootstrap_seed``.
+    root_ss = np.random.SeedSequence(bootstrap_seed)
 
     for i, t_a in enumerate(treatments):
         for j, t_b in enumerate(treatments):
@@ -375,7 +392,9 @@ def compute_probability_of_improvement(
             # Bootstrap CI by resampling seed indices
             n_a, n_b = scores_a.shape[0], scores_b.shape[0]
             boot_pois = np.zeros(reps)
-            rng = np.random.RandomState(42)
+            # Pair-specific sub-stream: indexes into the upper triangle.
+            pair_idx = i * len(treatments) + j
+            rng = np.random.default_rng(root_ss.spawn(pair_idx + 1)[-1])
 
             for r in range(reps):
                 idx_a = rng.choice(n_a, size=n_a, replace=True)
@@ -881,6 +900,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--reps", type=int, default=BOOTSTRAP_REPS,
         help="Number of bootstrap resamples.",
     )
+    p.add_argument(
+        "--bootstrap-seed", type=int, default=BOOTSTRAP_SEED,
+        help=(
+            "Seed for bootstrap resampling.  Disclosed in the paper's "
+            "reproducibility appendix; change for sensitivity analysis."
+        ),
+    )
 
     # Misc
     p.add_argument(
@@ -908,8 +934,9 @@ def main() -> int:
     )
 
     # Override module-level constants from CLI
-    global BOOTSTRAP_REPS, FIGURE_FORMAT
+    global BOOTSTRAP_REPS, FIGURE_FORMAT, BOOTSTRAP_SEED
     BOOTSTRAP_REPS = args.reps
+    BOOTSTRAP_SEED = args.bootstrap_seed
     FIGURE_FORMAT = args.format
 
     _setup_matplotlib()

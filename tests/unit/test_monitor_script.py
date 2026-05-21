@@ -227,20 +227,22 @@ class TestDataFrameBuilders:
         run = load_run(tmp_path)
         assert reward_curve_df(run) is None
 
-    def test_flag_progress_df_shows_all_18(self, run_dir):
+    def test_flag_progress_df_shows_all_flags(self, run_dir):
+        from pokemon_red_ai.game.event_flags import NUM_BOULDER_FLAGS
         run = load_run(run_dir)
         df = flag_progress_df(run)
-        assert len(df) == 18
+        assert len(df) == NUM_BOULDER_FLAGS
         # Must include the untriggered flags too
         triggered = df[df["triggered"]]["flag"].tolist()
         assert "EVENT_GOT_STARTER" in triggered
         assert "EVENT_BEAT_BROCK" not in triggered
 
     def test_flag_progress_df_without_state(self, tmp_path):
+        from pokemon_red_ai.game.event_flags import NUM_BOULDER_FLAGS
         run = load_run(tmp_path)
         df = flag_progress_df(run)
-        # Still lists all 18 flags even with no data
-        assert len(df) == 18
+        # Still lists every pre-registered flag even with no data
+        assert len(df) == NUM_BOULDER_FLAGS
         assert df["triggered"].sum() == 0
 
     def test_map_heatmap_df(self, run_dir):

@@ -216,12 +216,13 @@ class TestMilestones:
         calc = EventProgressRewardCalculator(config=config)
         calc.reset()
 
-        # Trigger 5 flags at once
+        # Trigger 5 flags at once.  Uses only flags that exist in
+        # the 15-flag pre-registered set (pret/pokered-verified).
         five_flags = {
             'EVENT_FOLLOWED_OAK_INTO_LAB': True,
+            'EVENT_GOT_TOWN_MAP': True,
             'EVENT_GOT_STARTER': True,
             'EVENT_BATTLED_RIVAL_IN_OAKS_LAB': True,
-            'EVENT_BEAT_RIVAL_IN_OAKS_LAB': True,
             'EVENT_GOT_OAKS_PARCEL': True,
         }
         calc.calculate_reward(_state(event_flags=_flags()))
@@ -237,16 +238,16 @@ class TestMilestones:
 
         five_flags = {
             'EVENT_FOLLOWED_OAK_INTO_LAB': True,
+            'EVENT_GOT_TOWN_MAP': True,
             'EVENT_GOT_STARTER': True,
             'EVENT_BATTLED_RIVAL_IN_OAKS_LAB': True,
-            'EVENT_BEAT_RIVAL_IN_OAKS_LAB': True,
             'EVENT_GOT_OAKS_PARCEL': True,
         }
         calc.calculate_reward(_state(event_flags=_flags()))
         calc.calculate_reward(_state(x=11, event_flags=_flags(**five_flags)))
 
-        # Add another flag — still at 6, milestone 5 already claimed
-        six_flags = {**five_flags, 'EVENT_DELIVERED_OAKS_PARCEL': True}
+        # Add a sixth flag — still triggers >=5, milestone already claimed.
+        six_flags = {**five_flags, 'EVENT_GOT_POKEDEX': True}
         calc.calculate_reward(_state(x=12, event_flags=_flags(**six_flags)))
 
         assert 'milestone_5' not in calc.reward_components
@@ -381,8 +382,8 @@ class TestEventProgressReport:
 
         report = calc.get_event_progress()
         assert report['flags_triggered'] == 1
-        assert report['flags_total'] == 18
-        assert report['progress_fraction'] == pytest.approx(1 / 18)
+        assert report['flags_total'] == 15
+        assert report['progress_fraction'] == pytest.approx(1 / 15)
         assert 'EVENT_GOT_STARTER' in report['triggered_names']
 
     def test_progress_report_empty_after_reset(self):

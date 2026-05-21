@@ -17,8 +17,11 @@ from scripts.train import (
     _make_env_factory,
     _make_vec_env,
     build_parser,
-    set_global_seeds,
 )
+# set_global_seeds was removed; seed_everything is the canonical replacement
+# and lives in scripts.seed_utils.  It seeds Python random, NumPy, torch
+# (CPU/CUDA/MPS), PYTHONHASHSEED, and SB3 in one call.
+from scripts.seed_utils import seed_everything
 
 
 class TestArgumentParser:
@@ -123,29 +126,59 @@ class TestArgumentParser:
 
 
 class TestGlobalSeeds:
-    """Test reproducibility seeding."""
+    """Test reproducibility seeding via scripts.seed_utils.seed_everything."""
 
     def test_numpy_deterministic(self):
-        set_global_seeds(123)
+        seed_everything(123)
         a = np.random.rand(5)
-        set_global_seeds(123)
+        seed_everything(123)
         b = np.random.rand(5)
         np.testing.assert_array_equal(a, b)
 
     def test_different_seeds_differ(self):
-        set_global_seeds(1)
+        seed_everything(1)
         a = np.random.rand(5)
-        set_global_seeds(2)
+        seed_everything(2)
         b = np.random.rand(5)
         assert not np.array_equal(a, b)
 
     def test_torch_deterministic(self):
         import torch
-        set_global_seeds(42)
+        seed_everything(42)
         a = torch.rand(5)
-        set_global_seeds(42)
+        seed_everything(42)
         b = torch.rand(5)
         assert torch.equal(a, b)
+
+    def test_python_random_seeded(self):
+        """seed_everything must seed Python's stdlib random too — train.py's
+        previous set_global_seeds did, and SB3 relies on it for some ops."""
+        import random
+        seed_everything(7)
+        a = [random.random() for _ in range(5)]
+        seed_everything(7)
+        b = [random.random() for _ in range(5)]
+        assert a == b
+
+    def test_python_hash_seed_set(self):
+        """PYTHONHASHSEED must be set so dict-iteration order is reproducible
+        in subprocess children of SubprocVecEnv."""
+        import os
+        seed_everything(99)
+        assert os.environ["PYTHONHASHSEED"] == "99"
+
+    def test_per_rank_offset(self):
+        """seed_offset shifts the effective seed so parallel envs get
+        independent but reproducible streams."""
+        seed_everything(10, seed_offset=0)
+        a = np.random.rand(3)
+        seed_everything(10, seed_offset=1)
+        b = np.random.rand(3)
+        assert not np.array_equal(a, b)
+        # Rank-1 should equal seed=11 with no offset.
+        seed_everything(11, seed_offset=0)
+        c = np.random.rand(3)
+        np.testing.assert_array_equal(b, c)
 
 
 # ──────────────────────────────────────────────────────────────────────
