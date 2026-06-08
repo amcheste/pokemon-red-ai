@@ -59,6 +59,10 @@ if _PROJECT_ROOT not in sys.path:
 
 from pokemon_red_ai.environment import PokemonRedGymEnv
 from pokemon_red_ai.game.memory import MAP_IDS, BADGE_FLAGS
+from pokemon_red_ai.game.rom import (
+    compute_rom_sha256,
+    RomHashMismatchError,
+)
 
 # Eval reproducibility: locked deterministic=True per analysis_plan.md S3.
 # seed_everything covers Python random, NumPy, torch (CPU/CUDA/MPS),
@@ -89,6 +93,7 @@ EVAL_METRIC_SCHEMA: Dict[str, type] = {
     "n_episodes": int,
     "eval_save_state": str,
     "checkpoint_path": str,
+    "rom_sha256": str,
     "git_sha": str,
 }
 
@@ -261,6 +266,7 @@ def evaluate_checkpoint(
     max_episode_steps: int = 15_000,
     observation_type: str = "multi_modal",
     allow_override: bool = False,
+    expected_rom_sha256: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run the fixed evaluation protocol on a trained checkpoint.
@@ -303,6 +309,19 @@ def evaluate_checkpoint(
         raise FileNotFoundError(f"ROM not found: {rom_path}")
     if not save_state.exists():
         raise FileNotFoundError(f"Save state not found: {save_state}")
+
+    # Always compute the ROM hash so it ends up in the output JSON.
+    # If --rom-sha256 was supplied, abort on mismatch.
+    rom_sha256 = compute_rom_sha256(rom_path)
+    logger.info("ROM sha256: %s  (%s)", rom_sha256, rom_path)
+    if expected_rom_sha256 is not None and (
+        rom_sha256.lower() != expected_rom_sha256.lower()
+    ):
+        raise RomHashMismatchError(
+            f"ROM at {rom_path} has SHA-256 {rom_sha256} but eval was "
+            f"asked for {expected_rom_sha256}.  Aborting to keep results "
+            f"comparable across runs."
+        )
 
     # Auto-detect algorithm if needed
     if algorithm == "auto":
@@ -394,6 +413,7 @@ def evaluate_checkpoint(
         "n_episodes": n_episodes,
         "eval_save_state": str(save_state),
         "checkpoint_path": str(checkpoint_path),
+        "rom_sha256": rom_sha256,
         "git_sha": _git_sha(),
         # Extended metrics (not in schema, but useful)
         "algorithm": algorithm,
@@ -456,6 +476,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--rom", type=Path, required=True,
         help="Path to Pokemon Red ROM (.gb) file.",
+    )
+    p.add_argument(
+        "--rom-sha256", type=str, default=None,
+        help=(
+            "Expected SHA-256 of the ROM.  If set, eval aborts on "
+            "mismatch.  Always recorded in the output JSON so the paper "
+            "can match eval results to a specific ROM dump."
+        ),
     )
     p.add_argument(
         "--save-state", type=Path,
@@ -522,8 +550,9 @@ def main() -> int:
             max_episode_steps=args.max_episode_steps,
             observation_type=args.observation_type,
             allow_override=args.allow_override,
+            expected_rom_sha256=args.rom_sha256,
         )
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, FileNotFoundError, RomHashMismatchError) as e:
         logger.error(str(e))
         return 1
 

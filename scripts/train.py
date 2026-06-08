@@ -49,6 +49,11 @@ from stable_baselines3.common.vec_env import (
 )
 
 from pokemon_red_ai.environment import PokemonRedGymEnv, RewardConfig
+from pokemon_red_ai.game.rom import (
+    compute_rom_sha256,
+    verify_rom_hash,
+    RomHashMismatchError,
+)
 from pokemon_red_ai.training.models import (
     create_model,
     get_model_config,
@@ -94,6 +99,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--rom", required=True, type=str,
         help="Path to Pokemon Red ROM (.gb) file.",
+    )
+    p.add_argument(
+        "--rom-sha256", type=str, default=None,
+        help=(
+            "Expected SHA-256 of the ROM file.  If set, the script "
+            "verifies the actual hash before training and aborts on "
+            "mismatch.  The hash is always logged (and ends up in W&B "
+            "config) so the paper's reproducibility appendix can record "
+            "exactly which dump produced each run."
+        ),
     )
 
     # ── Environment ──────────────────────────────────────────────────
@@ -316,6 +331,22 @@ def _make_vec_env(
 def train(args: argparse.Namespace) -> None:
     """Run a full training pipeline."""
 
+    # ── ROM hash verification ────────────────────────────────────────
+    # Always compute and log the SHA-256 so it ends up in the W&B run
+    # config and the paper's reproducibility appendix.  If --rom-sha256
+    # is set, abort on mismatch — otherwise the run continues but the
+    # hash is recorded for post-hoc disambiguation.
+    rom_sha256 = compute_rom_sha256(args.rom)
+    logger.info("ROM sha256: %s  (%s)", rom_sha256, args.rom)
+    if args.rom_sha256 is not None:
+        if rom_sha256.lower() != args.rom_sha256.lower():
+            raise RomHashMismatchError(
+                f"ROM at {args.rom} has SHA-256 {rom_sha256} but "
+                f"--rom-sha256 expected {args.rom_sha256}.  Aborting "
+                f"to prevent silently training on the wrong dump."
+            )
+        logger.info("ROM hash matches --rom-sha256.")
+
     # ── Seeding ──────────────────────────────────────────────────────
     # seed_everything seeds Python random, NumPy, torch (CPU/CUDA), PYTHONHASHSEED,
     # and SB3's set_random_seed.  The per-rank seeding for SubprocVecEnv workers
@@ -408,6 +439,9 @@ def train(args: argparse.Namespace) -> None:
             "save_state": args.save_state or "none",
             "seed": args.seed,
             "lstm_hidden_size": args.lstm_hidden_size,
+            # ROM SHA-256: recorded in W&B so the paper's reproducibility
+            # appendix can match runs to ROM dumps unambiguously.
+            "rom_sha256": rom_sha256,
         }
     )
 
