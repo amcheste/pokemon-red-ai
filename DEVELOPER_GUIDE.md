@@ -32,7 +32,7 @@ most of the research apparatus is opt-in.
 1. **Modularity**: Each component has a single responsibility and well-defined interfaces
 2. **Flexibility**: Multiple reward strategies, observation types, and training algorithms
 3. **Robustness**: Comprehensive error handling and fallback mechanisms
-4. **Testability**: Extensive unit and integration tests (833 passing)
+4. **Testability**: Extensive unit and integration tests (all passing)
 5. **Reproducibility**: Pre-registered analysis plan, locked event-flag set, deterministic eval
 6. **Extensibility**: Easy to add new features without breaking existing functionality
 
@@ -110,7 +110,8 @@ pokemon_red_ai/                     # Python package: library + CLI
 │   ├── agent.py                    # PokemonRedAgent (emulator wrapper)
 │   ├── controls.py                 # Input + screen-state detection
 │   ├── memory.py                   # RAM address constants + readers
-│   ├── event_flags.py              # 18 pre-registered event flags
+│   ├── event_flags.py              # 15 pre-registered event flags (pret/pokered-verified)
+│   ├── rom.py                      # ROM SHA-256 verification
 │   └── __init__.py
 ├── training/                       # Training infrastructure
 │   ├── trainer.py                  # PokemonTrainer orchestration
@@ -128,21 +129,21 @@ scripts/                            # Top-level entry points (not in package)
 ├── compare.py                      # Streamlit treatment comparison
 ├── monitor.py                      # Streamlit single-run dashboard
 ├── run_pilots.sh                   # Launch the canonical 9-pilot grid
-├── mirror_paper_to_overleaf.sh     # Mirror paper/ → Overleaf
+├── mirror_paper_to_overleaf.sh     # Mirror paper repo → Overleaf
+├── seed_utils.py                   # Multi-library seed_everything helper
+├── verify_event_flag_ids.py        # Re-verify event flag IDs vs pret/pokered
 └── create_save_states.py           # One-time save state generation
 
-paper/                              # Research artifacts
-├── analysis_plan.md                # Pre-registered hypotheses + protocol
-├── compute_ledger.md               # Per-run compute log
-├── main.tex + sections/            # EWRL paper LaTeX source
-├── references.bib
-├── Makefile
-└── figures/                        # Output of scripts/analyze.py
+# The paper artifacts (LaTeX sources, analysis plan, compute ledger,
+# figures) live in the private sibling repo pokemon-rl-paper to keep
+# the public code repo focused on the toolkit:
+#   https://github.com/amcheste/pokemon-rl-paper
 
 bin/setup-overleaf-project.sh       # One-shot Overleaf provisioning
 configs/                            # Sample alert + report configs
 docs/research_playbook.md           # Operational runbook
-tests/                              # 833 unit + integration tests
+tests/                              # Unit + integration tests (run `pytest tests/` for count)
+.github/workflows/test.yml          # CI: pytest matrix on py3.10/3.11/3.12 + event-flag verifier
 ```
 
 ## Core Components
@@ -277,9 +278,19 @@ class BaseRewardCalculator(ABC):
 Handles game state conversion to RL-compatible observations.
 
 **Observation Types:**
-- **Multi-modal**: Screen + position + stats + exploration data
-- **Screen-only**: Only visual information
-- **Minimal**: Compact feature vector for fast training
+
+Paper treatments (the three modalities the EWRL comparison uses):
+- **`pixel`**: 80×72×1 grayscale screen image
+- **`symbolic`**: 29-dimensional float vector of game state (position,
+  level, HP, badge bits, exploration counters, flag bits)
+- **`hybrid`**: `pixel` and `symbolic` concatenated at the LSTM input;
+  pixel and symbolic encoders are capacity-matched (see
+  `scripts/check_encoder_capacity.py`)
+
+Legacy treatments retained for back-compat (not used by the paper):
+- **`multi_modal`**: Screen + position + stats + exploration data
+- **`screen_only`**: Only visual information
+- **`minimal`**: Compact feature vector for fast training
 
 ### 3. Training Layer (`pokemon_red_ai.training`)
 
@@ -369,8 +380,9 @@ from pokemon_red_ai.analysis.comparison import (
   first triggered it.
 
 `scripts/analyze.py` produces final paper figures using the same data
-flow.  See [`paper/analysis_plan.md`](paper/analysis_plan.md) §6 for
-the locked statistical methodology.
+flow.  See `analysis_plan.md` §6 in the
+[`pokemon-rl-paper`](https://github.com/amcheste/pokemon-rl-paper) repo
+for the locked statistical methodology.
 
 ### Live monitoring callbacks (`pokemon_red_ai.training.callbacks`)
 
@@ -423,10 +435,12 @@ options.
 
 ### Overleaf integration
 
-The paper LaTeX in `paper/` is canonical.  `bin/setup-overleaf-project.sh`
-provisions the Overleaf side from a project ID + token in one
-command;  `scripts/mirror_paper_to_overleaf.sh` keeps git → Overleaf
-in sync.  Both depend on the
+The paper LaTeX lives in the private sibling repo
+[`pokemon-rl-paper`](https://github.com/amcheste/pokemon-rl-paper),
+which is canonical.  `bin/setup-overleaf-project.sh` provisions the
+Overleaf side from a project ID + token in one command;
+`scripts/mirror_paper_to_overleaf.sh` keeps git → Overleaf in sync.
+Both depend on the
 [overleaf-mcp-server](https://github.com/amcheste/overleaf-mcp).
 
 ## Design Patterns
@@ -562,15 +576,13 @@ flowchart LR
 tests/
 ├── conftest.py              # Global fixtures and configuration
 ├── unit/                    # Unit tests for individual components
-│   ├── agent/              # Game interface tests
-│   │   ├── conftest.py     # Agent-specific fixtures
-│   │   ├── test_agent.py   # PokemonRedAgent tests
-│   │   ├── test_controls.py # Controls and input tests
-│   │   └── test_memory.py  # Memory reading tests
-│   ├── environment/        # Environment layer tests
-│   ├── training/           # Training components tests
-│   └── utils/              # Utility function tests
-└── integration/            # Integration and end-to-end tests
+│   ├── game/                # PyBoy interface tests (agent, controls, memory,
+│   │                        #   event_flags, rom hash)
+│   ├── environment/         # Gym env + reward calculator tests
+│   ├── training/            # Callbacks, models, trainer, train-script tests
+│   ├── analysis/            # Treatment-comparison + rliable tests
+│   └── ...                  # Top-level: monitor, compare, eval, analyze, etc.
+└── integration/             # Integration and end-to-end tests (require a ROM)
 ```
 
 ### Testing Patterns
@@ -633,15 +645,15 @@ def test_agent_step_performance(benchmark_runner):
 
 ### Prerequisites
 
-- Python 3.8+
-- Pokemon Red ROM file (.gb format)
+- Python 3.10+ (matches `pyproject.toml`; CI tests 3.10 / 3.11 / 3.12)
+- Pokemon Red ROM file (.gb format) — users provide their own legal copy
 - Git for version control
 
 ### Local Development
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/pokemon-red-ai.git
+git clone https://github.com/amcheste/pokemon-red-ai.git
 cd pokemon-red-ai
 
 # Create virtual environment

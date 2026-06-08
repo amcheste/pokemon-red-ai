@@ -36,7 +36,7 @@ The pilots all start from `post_intro.state` (Pallet Town after Oak's
 intro). Verify it's there:
 
 ```bash
-ls -la states/post_intro.state
+ls -la save_states/s0_post_intro.state
 ```
 
 If missing, regenerate:
@@ -95,7 +95,7 @@ Confirm the full pilot pipeline works end-to-end:
 ```bash
 ./venv/bin/python3 scripts/train.py \
   --rom <path-to-rom.gb> \
-  --save-state states/post_intro.state \
+  --save-state save_states/s0_post_intro.state \
   --observation-type pixel \
   --algorithm RecurrentPPO \
   --reward-strategy events \
@@ -142,7 +142,7 @@ TREATMENT=pixel SEED=42
 
 ./venv/bin/python3 scripts/train.py \
   --rom <path-to-rom.gb> \
-  --save-state states/post_intro.state \
+  --save-state save_states/s0_post_intro.state \
   --observation-type "$TREATMENT" \
   --algorithm RecurrentPPO \
   --reward-strategy events \
@@ -307,7 +307,8 @@ runs.
 ### 4d. Get a second opinion (1 day)
 
 Ideally before submitting, even a quick read by:
-- An AI/ML colleague at Oracle (paid attention to IP separation, see Step 5)
+- A trusted AI/ML peer (with appropriate IP separation if your day-job
+  employer has a relevant IP clause — see Step 5)
 - Or a friend in academia
 - Or post the abstract for feedback in /r/MachineLearning
 
@@ -335,17 +336,23 @@ Per the M2 exit criteria. Categories: `cs.LG`, `cs.AI`. License: CC BY 4.0.
 These don't block pilots/paper but need to be done before the next
 papers (M3-M5). Tackle them during pilot wall-clock time.
 
-### AMC-70: Oracle IP compliance review
+### AMC-70: Day-job employer IP compliance review
 
-**Why:** Before posting the arXiv preprint, you need a clear answer that
-this work isn't owned by Oracle. **Do this BEFORE step 4f.**
+**Why:** Before posting the arXiv preprint, confirm that this work
+falls outside any employer's IP claim and is owned by CAM Labs LLC.
+**Do this BEFORE step 4f.**  Specifics depend on which employment
+agreements you're under at the time of submission — the checklist
+below is generic.
 
-- [ ] Read your Oracle employment agreement IP clauses
-- [ ] Confirm: all dev on personal hardware (not Oracle-issued)?
-- [ ] Confirm: no Oracle compute used (OCI free tier is your personal account)?
-- [ ] Confirm: no overlap with Oracle work products?
-- [ ] Document: "CAM Labs LLC owns this research, published under CAM Labs / personal affiliation"
-- [ ] If unclear → talk to Oracle Legal before submission
+- [ ] Read every active employment agreement's IP / inventions clause
+- [ ] Confirm: all dev was on personal hardware (not employer-issued)
+- [ ] Confirm: no employer compute used (cloud accounts are personal)
+- [ ] Confirm: no overlap with employer work products or research areas
+- [ ] Document the determination in your own files (date, agreements
+      reviewed, conclusion: "CAM Labs LLC owns this research, published
+      under CAM Labs affiliation").
+- [ ] If anything is ambiguous → talk to your employer's legal team
+      *before* submission, not after.
 
 ### AMC-69: NCSA ACCESS compute grant (for M4/M5)
 
@@ -354,16 +361,15 @@ expensive past EWRL.
 
 - [ ] Apply for **Startup Allocation** (fastest, no review board) at <https://access-ci.org/>
 - [ ] Use the EWRL paper abstract as the research description
-- [ ] PI affiliation: CAM Labs LLC if no academic appointment, else NC State
+- [ ] PI affiliation: CAM Labs LLC
 - [ ] Resource justification: "30 runs × 100M steps × ~1 A100 each ≈ 3000 hours"
 
-### AMC-68: NC State CS advisor (for paper credibility)
+### AMC-68: Academic advisor for paper credibility
 
 **Why:** EWRL is a workshop and CAM Labs alone is fine. NeurIPS / TMLR
 benefit from an academic co-author.
 
-- [ ] Browse NC State CS faculty: <https://www.csc.ncsu.edu/people/faculty/>
-- [ ] Filter for ML/AI group, RL/game research
+- [ ] Identify university CS / ML groups doing RL / game-AI research
 - [ ] Email 2-3 promising candidates with EWRL paper draft + your pitch
 - [ ] Goal: secure co-author for Papers B and C (M4/M5)
 - [ ] **Timeline: start outreach AFTER EWRL submission**
@@ -406,7 +412,7 @@ When all of these are checked, M2 is closed and you can start M3:
 - [ ] EWRL paper PDF submitted via the workshop portal
 - [ ] arXiv preprint posted, link added to Linear AMC-67
 - [ ] AMC-63/64/65/67 marked Done in Linear
-- [ ] Oracle IP review documented (AMC-70)
+- [ ] Day-job IP review documented (AMC-70)
 
 ---
 
@@ -417,12 +423,12 @@ When all of these are checked, M2 is closed and you can start M3:
 git checkout main && git pull origin main
 
 # Smoke test
-./venv/bin/python3 scripts/train.py --rom <ROM> --save-state states/post_intro.state \
+./venv/bin/python3 scripts/train.py --rom <ROM> --save-state save_states/s0_post_intro.state \
   --total-timesteps 50000 --seed 42 \
   --save-dir ./training_output/smoketest --wandb-run-name smoketest
 
 # Full pilot (substitute TREATMENT, SEED)
-./venv/bin/python3 scripts/train.py --rom <ROM> --save-state states/post_intro.state \
+./venv/bin/python3 scripts/train.py --rom <ROM> --save-state save_states/s0_post_intro.state \
   --observation-type pixel --algorithm RecurrentPPO --reward-strategy events \
   --total-timesteps 10000000 --seed 42 \
   --save-dir ./training_output/pixel-seed42 \

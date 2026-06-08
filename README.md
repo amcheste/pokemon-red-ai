@@ -7,8 +7,8 @@
 **A Gymnasium-compatible environment and training pipeline for
 *Pokémon Red*, built on PyBoy, Stable-Baselines3, and `sb3-contrib`.**
 
-[![Tests](https://img.shields.io/badge/tests-833%20passing-0B0B0C)](tests/)
-[![Python](https://img.shields.io/badge/python-3.13-0B0B0C)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-passing-0B0B0C)](tests/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-0B0B0C)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-1F4D3A)](LICENSE)
 
 </div>
@@ -19,7 +19,9 @@ This repository provides everything needed to train RL agents to play
 *Pokémon Red*: an emulator-backed Gymnasium environment with three
 first-class observation treatments (pixel / symbolic / hybrid),
 RecurrentPPO training scripts, an event-flag-based reward calculator
-covering 18 critical-path milestones, live Streamlit monitoring
+covering 15 critical-path milestones (Boulder Badge path, verified
+against the [`pret/pokered`](https://github.com/pret/pokered)
+disassembly), live Streamlit monitoring
 dashboards, configurable alerts (desktop / Slack / email), and an
 analysis layer with bootstrap confidence intervals via
 [`rliable`](https://github.com/google-research/rliable).
@@ -40,7 +42,7 @@ analysis layer with bootstrap confidence intervals via
 | `scripts/monitor.py` | Streamlit dashboard for live single-run monitoring |
 | `scripts/run_pilots.sh` | Launch a multi-treatment / multi-seed run grid |
 | `docs/research_playbook.md` | Step-by-step operational guide for long-running experiments |
-| `tests/` | 833 unit + integration tests (pytest) |
+| `tests/` | Unit + integration tests (pytest; run `pytest tests/` for the live count) |
 
 ---
 
