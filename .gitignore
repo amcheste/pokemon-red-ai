@@ -1,15 +1,27 @@
-pokemon_training/
+# ROM and emulator state — never distribute copyrighted game data
 PokemonRed.gb*
 *.state
-save_states/*.state
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+coverage.xml
+venv/
+.venv/
+
+# Run artifacts
+pokemon_training/
+training_output/
+wandb/
+logs/
+
+# IDE / OS
 .idea/
-pokemon_red_ai/__pycache__/
-pokemon_red_ai/cli/__pycache__/
-pokemon_red_ai/environment/__pycache__/
-pokemon_red_ai/game/__pycache__/
-pokemon_red_ai/training/__pycache__/
-pokemon_red_ai/utils/__pycache__/
-tests/__pycache__/
-tests/unit/game/__pycache__/
-tests/unit/environment/__pycache__/
-tests/unit/training/__pycache__/
+.vscode/
+.DS_Store
+
+# Local agent scratch
+.claude/

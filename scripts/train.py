@@ -26,9 +26,12 @@ Run ``python scripts/train.py --help`` for all options.
 """
 
 import argparse
+import json
 import logging
 import os
+import subprocess
 import sys
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Optional
 
@@ -78,6 +81,63 @@ except ImportError:
     from seed_utils import seed_everything
 
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Run provenance
+# ──────────────────────────────────────────────────────────────────────
+
+# Packages whose exact versions determine training behaviour.  Logged
+# into every run config so a paper result can be traced back to the
+# precise dependency set that produced it.
+_PROVENANCE_PACKAGES = (
+    "torch",
+    "stable-baselines3",
+    "sb3-contrib",
+    "gymnasium",
+    "pyboy",
+    "numpy",
+)
+
+
+def _git_output(args: list) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=_PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def collect_provenance() -> dict:
+    """Snapshot the code and dependency state that produced this run.
+
+    Returns git commit SHA, whether the working tree has uncommitted
+    changes, and the installed versions of behaviour-critical packages.
+    Git fields are ``None`` when not running from a git checkout (e.g.
+    a pip-installed copy on a cluster) — the run proceeds normally.
+    """
+    sha = _git_output(["rev-parse", "HEAD"])
+    porcelain = _git_output(["status", "--porcelain"])
+    versions = {}
+    for pkg in _PROVENANCE_PACKAGES:
+        try:
+            versions[f"version_{pkg}"] = importlib_metadata.version(pkg)
+        except importlib_metadata.PackageNotFoundError:
+            versions[f"version_{pkg}"] = None
+    return {
+        "git_sha": sha,
+        "git_dirty": bool(porcelain) if porcelain is not None else None,
+        "python_version": sys.version.split()[0],
+        **versions,
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -408,8 +468,25 @@ def train(args: argparse.Namespace) -> None:
             "save_state": args.save_state or "none",
             "seed": args.seed,
             "lstm_hidden_size": args.lstm_hidden_size,
+            "n_envs": args.n_envs,
         }
     )
+    provenance = collect_provenance()
+    effective_config.update(provenance)
+    if provenance["git_sha"] is None:
+        logger.warning("Not a git checkout — run config will lack a git SHA")
+    elif provenance["git_dirty"]:
+        logger.warning(
+            "Working tree has uncommitted changes — run is not exactly "
+            f"reproducible from git SHA {provenance['git_sha'][:12]}"
+        )
+
+    # Persist the config locally too, so runs remain traceable without
+    # W&B (--no-wandb, offline clusters, or a failed wandb.init).
+    run_config_path = os.path.join(args.save_dir, "run_config.json")
+    with open(run_config_path, "w") as fh:
+        json.dump(effective_config, fh, indent=2, sort_keys=True, default=str)
+    logger.info(f"Run config written to {run_config_path}")
 
     param_count = sum(p.numel() for p in model.policy.parameters())
     logger.info(f"Model created — {param_count:,} parameters")

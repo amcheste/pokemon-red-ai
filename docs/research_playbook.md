@@ -1,14 +1,25 @@
 # Pokemon Red RL: Research Playbook
 
-Everything you (Alan) need to do between right now and EWRL 2026
-submission, in order. Keep this open while you work.
+Everything you (Alan) need to do between right now and the ARLET @
+NeurIPS 2026 submission, in order. Keep this open while you work.
+
+> **⚠ Venue change (2026-07):** this playbook was originally written
+> for EWRL 2026 (deadline 2026-05-25), which was skipped. The first
+> paper target is now **ARLET @ NeurIPS 2026** — see Linear milestone
+> M3. The operational steps below (pilots → analysis → paper → submit)
+> are unchanged; read "EWRL" as "ARLET" and rescale timelines to the
+> M3 deadline. M3 additionally requires the per-condition LR tuning
+> sweep (AMC-147) before the main experimental runs.
 
 > **Status snapshot**
-> - **Today:** 2026-04-25
-> - **EWRL deadline:** 2026-05-25 (~30 days)
-> - **Done:** M1 (100%), Training Observability (75%, pending PR #26 merge)
-> - **Critical path:** You run pilots → I write the paper → you review/submit
-> - **Open PRs:** #26 (AMC-79, closes Training Observability)
+> - **Updated:** 2026-07-03
+> - **ARLET deadline:** ~2026-09-01 (M3 target)
+> - **Done:** M1 (100%), M2 — Code Readiness (100%), Training
+>   Observability (100%)
+> - **Remaining for M3:** LR tuning sweep (AMC-147) → main runs
+>   (5 seeds × 3 treatments × ~50M steps) → rliable analysis → paper
+> - **Critical path:** Confirm compute (grant applications submitted
+>   2026-06) → LR sweep → main runs → paper draft
 > - **Linear project:** [pokemon-red-ai](https://linear.app/amcheste/project/pokemon-red-ai)
 
 ---
