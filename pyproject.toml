@@ -28,6 +28,25 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
+# Core runtime dependencies as ranges.  The exact versions used for
+# paper experiments are pinned in requirements.txt (frozen from the
+# Python 3.13 research venv); these ranges are what a library install
+# (``pip install -e .``) needs to import and run the package on any
+# supported Python — without them, a standalone install of the
+# package cannot even be imported.
+dependencies = [
+    "numpy>=1.24",
+    "gymnasium>=0.29",
+    "pyboy>=2.0",
+    "torch>=2.0",
+    "stable-baselines3>=2.0",
+    "sb3-contrib>=2.0",
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "click>=8.0",
+    "rich>=13.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/amcheste/pokemon-red-ai"
 Repository = "https://github.com/amcheste/pokemon-red-ai"
