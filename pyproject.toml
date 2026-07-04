@@ -63,6 +63,17 @@ dashboard = [
 [project.scripts]
 pokemon-ai = "pokemon_red_ai.cli.commands:main"
 
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+# Explicit package discovery: the repo root also contains non-package
+# directories (configs/, save_states/, scripts/), which break
+# setuptools' flat-layout auto-detection with "multiple top-level
+# packages discovered".
+[tool.setuptools.packages.find]
+include = ["pokemon_red_ai*"]
+
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore::UserWarning:sdl2._internal",
