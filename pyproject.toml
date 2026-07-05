@@ -45,6 +45,11 @@ dependencies = [
     "matplotlib>=3.7",
     "click>=8.0",
     "rich>=13.0",
+    # Alerts config loading (pokemon_red_ai.training.alerts).
+    "pyyaml>=6.0",
+    # Statistical analysis backend (scripts/analyze.py, comparison
+    # tooling) — IQM / bootstrap CIs / probability of improvement.
+    "rliable>=1.2",
 ]
 
 [project.urls]
