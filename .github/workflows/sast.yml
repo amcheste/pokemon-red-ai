@@ -1,0 +1,20 @@
+name: SAST
+
+# Thin caller stub: logic lives in amcheste/gh-workflows. Add language rule
+# packs via the semgrep-config input (p/secrets is the universal floor).
+# Dependabot bumps the pin as gh-workflows releases.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 2 * * 1'  # Every Monday at 02:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    uses: amcheste/gh-workflows/.github/workflows/reusable-sast.yml@v1.1.0

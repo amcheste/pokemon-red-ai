@@ -1,0 +1,19 @@
+name: OpenSSF Scorecard
+
+# Thin caller stub: logic lives in amcheste/gh-workflows (includes the
+# default-branch guard so pushes to non-default branches skip instead of
+# failing). Dependabot bumps the pin as gh-workflows releases.
+
+on:
+  branch_protection_rule:
+  schedule:
+    - cron: '30 1 * * 1'  # Every Monday at 01:30 UTC
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions: read-all
+
+jobs:
+  scorecard:
+    uses: amcheste/gh-workflows/.github/workflows/reusable-scorecard.yml@v1.1.0
