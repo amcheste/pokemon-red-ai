@@ -1,0 +1,16 @@
+name: Stale
+
+# Thin caller stub: logic lives in amcheste/gh-workflows. Dependabot bumps
+# the pin as gh-workflows releases.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stale:
+    uses: amcheste/gh-workflows/.github/workflows/reusable-stale.yml@v1.1.0
