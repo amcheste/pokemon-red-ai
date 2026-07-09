@@ -513,10 +513,17 @@ class PokemonRedGymEnv(gym.Env):
 
 class PokemonRedVecEnv:
     """
+    .. deprecated:: 0.2.0
+       This class loops sub-envs **sequentially** in the main process —
+       it does not parallelise across cores.  All paper training and
+       evaluation uses ``stable_baselines3.common.vec_env.SubprocVecEnv``
+       directly (see ``scripts/train.py:_make_vec_env``).  Use that
+       instead.  This class will be removed in a future release.
+
     Vectorized environment wrapper for running multiple Pokemon Red environments.
 
-    Note: This is a basic implementation. For production use, consider using
-    stable-baselines3's VecEnv implementations with proper multiprocessing.
+    Note: serial implementation.  For production use, use
+    stable-baselines3's ``SubprocVecEnv``.
     """
 
     def __init__(self, rom_paths: list, **env_kwargs):
@@ -527,6 +534,15 @@ class PokemonRedVecEnv:
             rom_paths: List of ROM file paths (can be the same ROM multiple times)
             **env_kwargs: Arguments to pass to each environment
         """
+        import warnings as _warnings
+        _warnings.warn(
+            "PokemonRedVecEnv is a serial wrapper kept for back-compat; "
+            "it does not parallelise across cores and will be removed in "
+            "a future release.  Use stable_baselines3.common.vec_env."
+            "SubprocVecEnv (or DummyVecEnv) instead — see scripts/train.py.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.num_envs = len(rom_paths)
         self.envs = []
 

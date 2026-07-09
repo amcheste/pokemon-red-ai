@@ -42,7 +42,11 @@ All evaluation results in the paper use the locked protocol defined in `scripts/
 - Argmax policy (no exploration noise at eval time)
 - Max episode length: 15,000 environment steps
 
-The full pre-registered analysis plan is in [`paper/analysis_plan.md`](paper/analysis_plan.md).
+The full pre-registered analysis plan lives in the private
+[`pokemon-rl-paper`](https://github.com/amcheste/pokemon-rl-paper)
+sibling repo at `analysis_plan.md`.  The paper itself, LaTeX sources,
+and compute ledger all live there to keep the public code repo focused
+on the toolkit.
 
 ## Metrics
 
@@ -59,7 +63,10 @@ All numbers will report IQM ± 95% bootstrap CI over 5+ seeds.
 
 ## Quantitative Analyses
 
-Sample-efficiency curves, ablation tables, and generalization results will be in [`paper/figures/`](paper/figures/) once experiments complete.
+Sample-efficiency curves, ablation tables, and generalization results
+are produced by `scripts/analyze.py` (rliable bootstrap CIs) and live
+in the [`pokemon-rl-paper`](https://github.com/amcheste/pokemon-rl-paper)
+repo's `figures/` directory once experiments complete.
 
 ## Ethical Considerations
 

@@ -17,8 +17,12 @@ from scripts.train import (
     _make_env_factory,
     _make_vec_env,
     build_parser,
-    set_global_seeds,
+    collect_provenance,
 )
+# set_global_seeds was removed; seed_everything is the canonical replacement
+# and lives in scripts.seed_utils.  It seeds Python random, NumPy, torch
+# (CPU/CUDA/MPS), PYTHONHASHSEED, and SB3 in one call.
+from scripts.seed_utils import seed_everything
 
 
 class TestArgumentParser:
@@ -123,29 +127,104 @@ class TestArgumentParser:
 
 
 class TestGlobalSeeds:
-    """Test reproducibility seeding."""
+    """Test reproducibility seeding via scripts.seed_utils.seed_everything."""
 
     def test_numpy_deterministic(self):
-        set_global_seeds(123)
+        seed_everything(123)
         a = np.random.rand(5)
-        set_global_seeds(123)
+        seed_everything(123)
         b = np.random.rand(5)
         np.testing.assert_array_equal(a, b)
 
     def test_different_seeds_differ(self):
-        set_global_seeds(1)
+        seed_everything(1)
         a = np.random.rand(5)
-        set_global_seeds(2)
+        seed_everything(2)
         b = np.random.rand(5)
         assert not np.array_equal(a, b)
 
     def test_torch_deterministic(self):
         import torch
-        set_global_seeds(42)
+        seed_everything(42)
         a = torch.rand(5)
-        set_global_seeds(42)
+        seed_everything(42)
         b = torch.rand(5)
         assert torch.equal(a, b)
+
+    def test_python_random_seeded(self):
+        """seed_everything must seed Python's stdlib random too — train.py's
+        previous set_global_seeds did, and SB3 relies on it for some ops."""
+        import random
+        seed_everything(7)
+        a = [random.random() for _ in range(5)]
+        seed_everything(7)
+        b = [random.random() for _ in range(5)]
+        assert a == b
+
+    def test_python_hash_seed_set(self):
+        """PYTHONHASHSEED must be set so dict-iteration order is reproducible
+        in subprocess children of SubprocVecEnv."""
+        import os
+        seed_everything(99)
+        assert os.environ["PYTHONHASHSEED"] == "99"
+
+    def test_per_rank_offset(self):
+        """seed_offset shifts the effective seed so parallel envs get
+        independent but reproducible streams."""
+        seed_everything(10, seed_offset=0)
+        a = np.random.rand(3)
+        seed_everything(10, seed_offset=1)
+        b = np.random.rand(3)
+        assert not np.array_equal(a, b)
+        # Rank-1 should equal seed=11 with no offset.
+        seed_everything(11, seed_offset=0)
+        c = np.random.rand(3)
+        np.testing.assert_array_equal(b, c)
+
+
+class TestProvenance:
+    """Test run-provenance capture (git SHA, dirty flag, package versions)."""
+
+    def test_captures_git_sha_in_repo(self):
+        """Running from this repo, the SHA must be a 40-char hex string."""
+        prov = collect_provenance()
+        assert prov["git_sha"] is not None
+        assert len(prov["git_sha"]) == 40
+        int(prov["git_sha"], 16)  # raises if not hex
+
+    def test_git_dirty_is_bool_in_repo(self):
+        prov = collect_provenance()
+        assert isinstance(prov["git_dirty"], bool)
+
+    def test_package_versions_present(self):
+        """Behaviour-critical packages must all resolve to a version string
+        in the dev environment — a None here means the paper's dependency
+        appendix would silently miss a package."""
+        prov = collect_provenance()
+        for pkg in ("torch", "stable-baselines3", "sb3-contrib",
+                    "gymnasium", "pyboy", "numpy"):
+            assert prov[f"version_{pkg}"], f"missing version for {pkg}"
+
+    def test_python_version_recorded(self):
+        import sys
+        prov = collect_provenance()
+        assert prov["python_version"] == sys.version.split()[0]
+
+    def test_graceful_outside_git_checkout(self):
+        """A pip-installed copy on a cluster has no .git — provenance must
+        degrade to None fields, never raise."""
+        with patch("scripts.train._git_output", return_value=None):
+            prov = collect_provenance()
+        assert prov["git_sha"] is None
+        assert prov["git_dirty"] is None
+        # Package versions are unaffected by git availability.
+        assert prov["version_numpy"]
+
+    def test_git_failure_does_not_raise(self):
+        """git binary missing entirely (OSError path in _git_output)."""
+        with patch("scripts.train.subprocess.run", side_effect=OSError):
+            prov = collect_provenance()
+        assert prov["git_sha"] is None
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -15,8 +15,9 @@ abstract: >-
   A controlled empirical study of observation representations
   (pixel, symbolic, hybrid) in long-horizon, sparse-reward
   reinforcement learning, using Pokémon Red as the benchmark
-  environment.  RecurrentPPO agents are trained against an
-  18-flag event-progress reward; results are reported with
+  environment.  RecurrentPPO agents are trained against a
+  15-flag event-progress reward (Boulder-Badge path, verified
+  against the pret/pokered disassembly); results are reported with
   rliable interquartile means and 95% stratified-bootstrap
   confidence intervals.  Released as a 3-paper cascade
   (EWRL 2026 → NeurIPS 2026 workshop → TMLR).

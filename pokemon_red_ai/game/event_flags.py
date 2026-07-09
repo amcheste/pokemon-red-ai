@@ -8,9 +8,18 @@ trainers, collects items, etc.  Each flag occupies one bit::
     address = EVENT_FLAGS_START + (flag_id // 8)
     bit     = flag_id % 8
 
-The 18 flags in ``BOULDER_PATH_FLAGS`` are the exact set pre-registered
-in ``paper/analysis_plan.md`` section 9.  Their IDs are taken from the
-``pret/pokered`` disassembly (``constants/event_constants.asm``).
+The 15 flags in ``BOULDER_PATH_FLAGS`` are the pre-registered Boulder-Badge
+path events from ``paper/analysis_plan.md`` section 9, corrected to match
+the canonical names and IDs in the ``pret/pokered`` disassembly
+(``constants/event_constants.asm``).
+
+.. note::
+   Pre-pilot correction (2026-05-09): four events in the original §9 list
+   (``EVENT_BEAT_RIVAL_IN_OAKS_LAB``, ``EVENT_DELIVERED_OAKS_PARCEL``,
+   ``EVENT_BEAT_PEWTER_GYM_TRAINER_1``, ``EVENT_GOT_POKEMON_FROM_FAN_CLUB_CHAIRMAN``)
+   do not exist in ``pret/pokered`` and were dropped.  The canary was
+   re-pointed to ``EVENT_GOT_BIKE_VOUCHER`` (post-Vermilion, requires
+   passing Brock).  See ``paper/compute_ledger.md`` for the full record.
 
 .. note::
    If you discover an ID is off by one, fix it here **and** log the
@@ -62,50 +71,48 @@ BATTLE_STATE_ADDR: int = 0xD057
 # Each value is a *flag ID* — a non-negative integer.  The reader below
 # converts it to (byte_offset, bit_position) automatically.
 #
-# Verified against:
-#   https://github.com/pret/pokered  (constants/event_constants.asm)
-#   https://datacrystal.tcrf.net/wiki/Pok%C3%A9mon_Red/Blue/RAM_map
+# All IDs verified against the canonical ``pret/pokered`` disassembly:
+#   https://github.com/pret/pokered/blob/master/constants/event_constants.asm
 #
-# Ordering follows the natural story progression from Pallet Town to
-# the Boulder Badge.
+# IDs were resolved by emulating the rgbds const_def/const/const_skip/
+# const_next macros against the file; full table is reproducible by
+# running ``scripts/verify_event_flag_ids.py``.
 
 BOULDER_PATH_FLAGS: Dict[str, int] = {
     # --- Pallet Town / Oak's Lab ---
-    'EVENT_FOLLOWED_OAK_INTO_LAB':            0x045,   # Oak leads you to lab
-    'EVENT_GOT_STARTER':                      0x046,   # Chose Bulbasaur/Charmander/Squirtle
-    'EVENT_BATTLED_RIVAL_IN_OAKS_LAB':        0x047,   # Rival fight triggered
-    'EVENT_BEAT_RIVAL_IN_OAKS_LAB':           0x04A,   # Won first rival battle
+    'EVENT_FOLLOWED_OAK_INTO_LAB':            0x000,   # Oak leads you to lab (game start)
+    'EVENT_GOT_TOWN_MAP':                     0x018,   # Daisy gives Town Map
+    'EVENT_GOT_STARTER':                      0x022,   # Chose Bulbasaur/Charmander/Squirtle
+    'EVENT_BATTLED_RIVAL_IN_OAKS_LAB':        0x023,   # First rival battle (always won)
+    'EVENT_GOT_POKEBALLS_FROM_OAK':           0x024,   # Oak gives Poke Balls
+    'EVENT_GOT_POKEDEX':                      0x025,   # Received Pokedex (after parcel delivery)
 
     # --- Oak's Parcel quest (Route 1 → Viridian → back to Pallet) ---
-    'EVENT_GOT_OAKS_PARCEL':                  0x04E,   # Picked up parcel in Viridian Mart
-    'EVENT_DELIVERED_OAKS_PARCEL':            0x050,   # Returned parcel to Oak
-    'EVENT_GOT_POKEDEX':                      0x052,   # Received Pokedex from Oak
-    'EVENT_GOT_POKEBALLS_FROM_OAK':           0x054,   # Oak's aide gave Poke Balls
-    'EVENT_GOT_TOWN_MAP':                     0x055,   # Got Town Map from Daisy
-
-    # --- Viridian Forest ---
-    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_0':   0x064,   # Bug Catcher 1
-    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_1':   0x065,   # Bug Catcher 2
-    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_2':   0x066,   # Bug Catcher 3
+    'EVENT_GOT_OAKS_PARCEL':                  0x039,   # Picked up parcel in Viridian Mart
 
     # --- Pewter City Gym ---
-    'EVENT_BEAT_PEWTER_GYM_TRAINER_0':        0x05D,   # Jr. Trainer in Pewter Gym
-    'EVENT_BEAT_BROCK':                       0x05A,   # Defeated Brock
-    'EVENT_GOT_TM34_BIDE':                    0x05C,   # Brock gave TM34 (confirms victory)
+    'EVENT_BEAT_PEWTER_GYM_TRAINER_0':        0x072,   # Jr. Trainer in Pewter Gym
+    'EVENT_GOT_TM34':                         0x076,   # Brock gives TM34 (Bide)
+    'EVENT_BEAT_BROCK':                       0x077,   # Defeated Brock (primary milestone)
+
+    # --- Viridian Forest ---
+    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_0':   0x562,   # Bug Catcher 1
+    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_1':   0x563,   # Bug Catcher 2
+    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_2':   0x564,   # Bug Catcher 3
 
     # --- Optional stretch milestones ---
-    'EVENT_BEAT_RIVAL_ROUTE22':               0x09A,   # Route 22 rival (optional)
+    'EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE':    0x525,   # Route 22 rival (optional)
 
     # --- Sanity canary (should NOT fire before Brock) ---
-    'EVENT_GOT_OLD_ROD':                      0x146,   # Vermilion fishing guru
-    'EVENT_GOT_BICYCLE_VOUCHER':              0x1F0,   # Pokemon Fan Club Chairman
+    'EVENT_GOT_BIKE_VOUCHER':                 0x151,   # Vermilion Fan Club Chairman gift
 }
 
 #: Total number of pre-registered flags.
 NUM_BOULDER_FLAGS: int = len(BOULDER_PATH_FLAGS)
-assert NUM_BOULDER_FLAGS == 18, (
-    f"Expected 18 pre-registered flags, got {NUM_BOULDER_FLAGS}. "
-    f"Update paper/analysis_plan.md section 9 if this is intentional."
+assert NUM_BOULDER_FLAGS == 15, (
+    f"Expected 15 pre-registered flags, got {NUM_BOULDER_FLAGS}. "
+    f"If you change the set, update paper/analysis_plan.md section 9 "
+    f"and log the deviation in paper/compute_ledger.md."
 )
 
 
@@ -113,39 +120,36 @@ assert NUM_BOULDER_FLAGS == 18, (
 # Reward weights for each flag (used by EventProgressRewardCalculator)
 # ---------------------------------------------------------------------------
 # Larger reward for harder-to-reach milestones.  The total reward budget
-# across all flags is ~1000 (the same magnitude as a badge reward in the
+# across all flags is ~575 (the same magnitude as a badge reward in the
 # existing reward calculators) so the reward scale stays in the same regime.
 
 FLAG_REWARD_WEIGHTS: Dict[str, float] = {
     # --- Pallet Town / Lab  (easy, early) ---
     'EVENT_FOLLOWED_OAK_INTO_LAB':            5.0,
-    'EVENT_GOT_STARTER':                      10.0,
-    'EVENT_BATTLED_RIVAL_IN_OAKS_LAB':        5.0,
-    'EVENT_BEAT_RIVAL_IN_OAKS_LAB':           25.0,
+    'EVENT_GOT_TOWN_MAP':                     5.0,
+    'EVENT_GOT_STARTER':                      15.0,
+    'EVENT_BATTLED_RIVAL_IN_OAKS_LAB':        15.0,
+    'EVENT_GOT_POKEBALLS_FROM_OAK':           10.0,
+    'EVENT_GOT_POKEDEX':                      30.0,   # implies parcel delivery completed
 
     # --- Parcel quest (requires Route 1 traversal) ---
     'EVENT_GOT_OAKS_PARCEL':                  15.0,
-    'EVENT_DELIVERED_OAKS_PARCEL':             20.0,
-    'EVENT_GOT_POKEDEX':                      30.0,
-    'EVENT_GOT_POKEBALLS_FROM_OAK':           10.0,
-    'EVENT_GOT_TOWN_MAP':                     5.0,
 
     # --- Viridian Forest (requires combat) ---
-    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_0':    35.0,
-    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_1':    35.0,
-    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_2':    35.0,
+    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_0':   35.0,
+    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_1':   35.0,
+    'EVENT_BEAT_VIRIDIAN_FOREST_TRAINER_2':   35.0,
 
     # --- Pewter Gym  (requires reaching Pewter + winning battles) ---
-    'EVENT_BEAT_PEWTER_GYM_TRAINER_0':         50.0,
-    'EVENT_BEAT_BROCK':                        200.0,
-    'EVENT_GOT_TM34_BIDE':                    50.0,
+    'EVENT_BEAT_PEWTER_GYM_TRAINER_0':        50.0,
+    'EVENT_GOT_TM34':                         50.0,
+    'EVENT_BEAT_BROCK':                       200.0,
 
     # --- Optional stretch ---
-    'EVENT_BEAT_RIVAL_ROUTE22':                75.0,
+    'EVENT_BEAT_ROUTE22_RIVAL_1ST_BATTLE':    75.0,
 
-    # --- Canaries (should NOT fire before Brock — reward is low) ---
-    'EVENT_GOT_OLD_ROD':                       1.0,
-    'EVENT_GOT_BICYCLE_VOUCHER':               1.0,
+    # --- Canary (should NOT fire before Brock — reward is low) ---
+    'EVENT_GOT_BIKE_VOUCHER':                 1.0,
 }
 
 
@@ -185,7 +189,7 @@ def read_event_flag(memory, flag_id: int) -> bool:
 
 
 def read_boulder_path_flags(memory) -> Dict[str, bool]:
-    """Read all 18 pre-registered Boulder Badge path flags.
+    """Read all 15 pre-registered Boulder Badge path flags.
 
     Args:
         memory: PyBoy memory object.
@@ -200,7 +204,7 @@ def read_boulder_path_flags(memory) -> Dict[str, bool]:
 
 
 def count_boulder_path_flags(memory) -> int:
-    """Count how many of the 18 pre-registered flags are set.
+    """Count how many of the 15 pre-registered flags are set.
 
     This is the *event-flag coverage* secondary metric from
     ``analysis_plan.md`` section 4.
@@ -209,7 +213,7 @@ def count_boulder_path_flags(memory) -> int:
         memory: PyBoy memory object.
 
     Returns:
-        Integer count in ``[0, 18]``.
+        Integer count in ``[0, 15]``.
     """
     return sum(
         read_event_flag(memory, flag_id)

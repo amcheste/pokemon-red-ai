@@ -66,8 +66,19 @@ def seed_everything(
         torch.manual_seed(effective_seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(effective_seed)
+        # MPS (Apple Silicon).  torch.manual_seed nominally covers all
+        # backends, but mps.manual_seed is the explicit per-device call.
+        if hasattr(torch, "mps") and hasattr(torch.mps, "manual_seed"):
+            try:
+                torch.mps.manual_seed(effective_seed)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("torch.mps.manual_seed failed: %s", exc)
         if deterministic_torch:
-            torch.use_deterministic_algorithms(True)
+            # warn_only=True logs a warning if an op without a deterministic
+            # implementation is invoked rather than raising — useful on MPS
+            # where coverage is partial.  Eval still flags nondeterminism in
+            # the log so the paper's reproducibility appendix can disclose it.
+            torch.use_deterministic_algorithms(True, warn_only=True)
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
     except ImportError:
