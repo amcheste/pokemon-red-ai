@@ -27,7 +27,19 @@ Usage:
         game.run_opening_sequence()
 """
 
-__version__ = "0.1.0"
+# Single source of truth for the package version is pyproject.toml.  We
+# read it dynamically to prevent the kind of drift the audit caught
+# (this file said 0.1.0; pyproject.toml said 0.2.0).
+try:
+    from importlib.metadata import version as _pkg_version, PackageNotFoundError
+    try:
+        __version__ = _pkg_version("pokemon-red-ai")
+    except PackageNotFoundError:
+        # Source checkout where the package wasn't installed via pip.
+        __version__ = "0.0.0+unknown"
+except ImportError:  # pragma: no cover  (importlib.metadata is stdlib since 3.8)
+    __version__ = "0.0.0+unknown"
+
 __author__ = "Alan Chester"
 __email__ = "amcheste@gmail.com"
 __license__ = "MIT"
@@ -120,7 +132,10 @@ def quick_train(rom_path: str, timesteps: int = 100000, **kwargs):
     trainer.train(total_timesteps=timesteps, **kwargs)
 
 
-# Package metadata for tools that need it
+# Package metadata for tools that need it.  Authoritative copies live in
+# pyproject.toml + requirements.txt; this dict is for convenience only.
+# Keep python_requires in sync with pyproject.toml manually (or read it
+# from package metadata if a consumer cares about strict accuracy).
 PACKAGE_DATA = {
     'name': 'pokemon-red-ai',
     'version': __version__,
@@ -128,16 +143,7 @@ PACKAGE_DATA = {
     'author': __author__,
     'license': __license__,
     'url': __url__,
-    'python_requires': '>=3.8',
-    'dependencies': [
-        'gymnasium>=0.29.0',
-        'stable-baselines3>=2.0.0',
-        'pyboy>=2.0.0',
-        'numpy>=1.21.0',
-        'opencv-python>=4.5.0',
-        'matplotlib>=3.5.0',
-        'pyyaml>=6.0',
-    ]
+    'python_requires': '>=3.10',  # matches pyproject.toml
 }
 
 
