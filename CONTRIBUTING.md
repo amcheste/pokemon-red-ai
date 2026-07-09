@@ -5,6 +5,10 @@ codebase. We welcome bug reports, fixes, and small enhancements that
 fit the project's scope.  For larger changes, please open an issue
 first to discuss design.
 
+All participation in this project — issues, pull requests, discussions,
+and any other interaction — is governed by the project's
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Scope
 
 The project is the supporting code for a 3-paper research cascade
