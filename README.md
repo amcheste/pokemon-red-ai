@@ -101,7 +101,6 @@ project is the up-to-date source while runs are in flight.
 | `scripts/monitor.py` | Streamlit dashboard for live single-run monitoring |
 | `scripts/run_pilots.sh` | Launch a multi-treatment / multi-seed run grid |
 | `scripts/verify_event_flag_ids.py` | Re-verify event flag IDs against `pret/pokered` |
-| `docs/research_playbook.md` | Step-by-step operational guide for long-running experiments |
 | `docs/testing_roadmap.md` | Tiered acceptance / regression testing plan |
 | `tests/` | Unit + integration tests (pytest; run `pytest tests/` for the live count) |
 
@@ -153,11 +152,8 @@ the pipeline is ready for [full experiments](#full-experiments).
 ## Full experiments
 
 The canonical 9-pilot grid (3 treatments × 3 seeds × 10M env-steps)
-is the EWRL 2026 paper's main result.  On an Apple M3 Max with
-3-pilot concurrency it takes ~33 hours wall-clock; see
-[`docs/research_playbook.md`](docs/research_playbook.md) for the
-operational playbook, compute estimates, and cloud-compute
-alternatives.
+backs the workshop paper's main result.  On an Apple M3 Max with
+3-pilot concurrency it takes ~33 hours wall-clock.
 
 ```bash
 # Launch the 9-pilot grid (caffeinate-wrapped on macOS)
@@ -321,11 +317,8 @@ observation representations in long-horizon, sparse-reward RL.
 | **M4** | NeurIPS 2026 workshop — 750M+ env-step main result, 5 seeds × 3 treatments | Planned |
 | **M5** | TMLR campaign — full ablation set, generalization test, ~4.2B env-step budget | Planned |
 
-Compute estimates, milestone exit criteria, and a per-step operational
-playbook are in
-[`docs/research_playbook.md`](docs/research_playbook.md).  The tiered
-testing plan tracking future regression / acceptance work lives in
-[`docs/testing_roadmap.md`](docs/testing_roadmap.md).
+The tiered testing plan tracking future regression / acceptance work
+lives in [`docs/testing_roadmap.md`](docs/testing_roadmap.md).
 
 ## Related work and inspiration
 

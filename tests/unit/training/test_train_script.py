@@ -17,6 +17,7 @@ from scripts.train import (
     _make_env_factory,
     _make_vec_env,
     build_parser,
+    collect_provenance,
 )
 # set_global_seeds was removed; seed_everything is the canonical replacement
 # and lives in scripts.seed_utils.  It seeds Python random, NumPy, torch
@@ -179,6 +180,51 @@ class TestGlobalSeeds:
         seed_everything(11, seed_offset=0)
         c = np.random.rand(3)
         np.testing.assert_array_equal(b, c)
+
+
+class TestProvenance:
+    """Test run-provenance capture (git SHA, dirty flag, package versions)."""
+
+    def test_captures_git_sha_in_repo(self):
+        """Running from this repo, the SHA must be a 40-char hex string."""
+        prov = collect_provenance()
+        assert prov["git_sha"] is not None
+        assert len(prov["git_sha"]) == 40
+        int(prov["git_sha"], 16)  # raises if not hex
+
+    def test_git_dirty_is_bool_in_repo(self):
+        prov = collect_provenance()
+        assert isinstance(prov["git_dirty"], bool)
+
+    def test_package_versions_present(self):
+        """Behaviour-critical packages must all resolve to a version string
+        in the dev environment — a None here means the paper's dependency
+        appendix would silently miss a package."""
+        prov = collect_provenance()
+        for pkg in ("torch", "stable-baselines3", "sb3-contrib",
+                    "gymnasium", "pyboy", "numpy"):
+            assert prov[f"version_{pkg}"], f"missing version for {pkg}"
+
+    def test_python_version_recorded(self):
+        import sys
+        prov = collect_provenance()
+        assert prov["python_version"] == sys.version.split()[0]
+
+    def test_graceful_outside_git_checkout(self):
+        """A pip-installed copy on a cluster has no .git — provenance must
+        degrade to None fields, never raise."""
+        with patch("scripts.train._git_output", return_value=None):
+            prov = collect_provenance()
+        assert prov["git_sha"] is None
+        assert prov["git_dirty"] is None
+        # Package versions are unaffected by git availability.
+        assert prov["version_numpy"]
+
+    def test_git_failure_does_not_raise(self):
+        """git binary missing entirely (OSError path in _git_output)."""
+        with patch("scripts.train.subprocess.run", side_effect=OSError):
+            prov = collect_provenance()
+        assert prov["git_sha"] is None
 
 
 # ──────────────────────────────────────────────────────────────────────

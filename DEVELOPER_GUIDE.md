@@ -141,7 +141,6 @@ scripts/                            # Top-level entry points (not in package)
 
 bin/setup-overleaf-project.sh       # One-shot Overleaf provisioning
 configs/                            # Sample alert + report configs
-docs/research_playbook.md           # Operational runbook
 tests/                              # Unit + integration tests (run `pytest tests/` for count)
 .github/workflows/test.yml          # CI: pytest matrix on py3.10/3.11/3.12 + event-flag verifier
 ```
