@@ -467,12 +467,15 @@ class EventRewardConfig:
     # from ``event_flags.FLAG_REWARD_WEIGHTS``)
     event_flag_scale: float = 1.0
 
-    # Bonus for reaching event milestones (N flags triggered)
+    # Bonus for reaching event milestones (N flags triggered).
+    # Calibrated for the 15-flag BOULDER_PATH_FLAGS set in event_flags.py:
+    # 6 Pallet-phase flags, 1 parcel pickup, 3 Viridian Forest trainers,
+    # 1 Pewter Jr Trainer, GOT_TM34, BEAT_BROCK, 1 stretch, 1 canary.
     milestone_thresholds: Dict[int, float] = field(default_factory=lambda: {
-        5:  50.0,     # ~Parcel quest complete
-        10: 150.0,    # Through Viridian Forest
-        14: 300.0,    # Standing in front of Brock
-        16: 500.0,    # Brock defeated + TM collected
+        5:  50.0,     # ~Pallet/Lab phase complete
+        10: 150.0,    # Through Viridian Forest (5 lab + parcel/pokedex/forest)
+        12: 300.0,    # Standing in front of Brock (Pewter Jr Trainer done)
+        13: 500.0,    # Brock defeated + TM34 collected (Boulder Badge)
     })
 
 

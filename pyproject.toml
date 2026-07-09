@@ -28,6 +28,34 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
+# Core runtime dependencies as ranges.  The exact versions used for
+# paper experiments are pinned in requirements.txt (frozen from the
+# Python 3.13 research venv); these ranges are what a library install
+# (``pip install -e .``) needs to import and run the package on any
+# supported Python — without them, a standalone install of the
+# package cannot even be imported.
+dependencies = [
+    "numpy>=1.24",
+    "gymnasium>=0.29",
+    "pyboy>=2.0",
+    "torch>=2.0",
+    "stable-baselines3>=2.0",
+    "sb3-contrib>=2.0",
+    # pandas capped below 3: arch (pulled in via rliable) still uses
+    # the pandas-2 deprecate_kwarg API, which pandas 3.0 changed —
+    # TypeError at import on Python >=3.11 where pandas 3 resolves.
+    # Lift the cap once arch releases pandas-3 support.
+    "pandas>=2.0,<3.0",
+    "matplotlib>=3.7",
+    "click>=8.0",
+    "rich>=13.0",
+    # Alerts config loading (pokemon_red_ai.training.alerts).
+    "pyyaml>=6.0",
+    # Statistical analysis backend (scripts/analyze.py, comparison
+    # tooling) — IQM / bootstrap CIs / probability of improvement.
+    "rliable>=1.2",
+]
+
 [project.urls]
 Homepage = "https://github.com/amcheste/pokemon-red-ai"
 Repository = "https://github.com/amcheste/pokemon-red-ai"
@@ -43,6 +71,17 @@ dashboard = [
 
 [project.scripts]
 pokemon-ai = "pokemon_red_ai.cli.commands:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+# Explicit package discovery: the repo root also contains non-package
+# directories (configs/, save_states/, scripts/), which break
+# setuptools' flat-layout auto-detection with "multiple top-level
+# packages discovered".
+[tool.setuptools.packages.find]
+include = ["pokemon_red_ai*"]
 
 [tool.pytest.ini_options]
 filterwarnings = [

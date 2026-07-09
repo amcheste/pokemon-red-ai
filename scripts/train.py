@@ -14,7 +14,7 @@ Usage (full research run)::
 
     python scripts/train.py \
         --rom path/to/PokemonRed.gb \
-        --save-state states/post_intro.state \
+        --save-state save_states/s0_post_intro.state \
         --algorithm RecurrentPPO \
         --reward-strategy events \
         --total-timesteps 1_000_000 \
@@ -26,9 +26,12 @@ Run ``python scripts/train.py --help`` for all options.
 """
 
 import argparse
+import json
 import logging
 import os
+import subprocess
 import sys
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Optional
 
@@ -49,6 +52,11 @@ from stable_baselines3.common.vec_env import (
 )
 
 from pokemon_red_ai.environment import PokemonRedGymEnv, RewardConfig
+from pokemon_red_ai.game.rom import (
+    compute_rom_sha256,
+    verify_rom_hash,
+    RomHashMismatchError,
+)
 from pokemon_red_ai.training.models import (
     create_model,
     get_model_config,
@@ -67,7 +75,74 @@ from pokemon_red_ai.training.alerts import (
 )
 from pokemon_red_ai.utils import create_directories
 
+# Reproducibility: seed_everything seeds Python random, NumPy, torch (CPU/CUDA),
+# PYTHONHASHSEED, and stable-baselines3 in one place.  Lives in scripts/ so it
+# can be reused from eval.py and other entry points.  Import path works for
+# both ``python scripts/train.py`` (scripts/ on sys.path via __main__) and
+# ``python -m scripts.train`` (project root on sys.path via the insert above).
+try:
+    from scripts.seed_utils import seed_everything
+except ImportError:
+    from seed_utils import seed_everything
+
 logger = logging.getLogger(__name__)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Run provenance
+# ──────────────────────────────────────────────────────────────────────
+
+# Packages whose exact versions determine training behaviour.  Logged
+# into every run config so a paper result can be traced back to the
+# precise dependency set that produced it.
+_PROVENANCE_PACKAGES = (
+    "torch",
+    "stable-baselines3",
+    "sb3-contrib",
+    "gymnasium",
+    "pyboy",
+    "numpy",
+)
+
+
+def _git_output(args: list) -> Optional[str]:
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=_PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def collect_provenance() -> dict:
+    """Snapshot the code and dependency state that produced this run.
+
+    Returns git commit SHA, whether the working tree has uncommitted
+    changes, and the installed versions of behaviour-critical packages.
+    Git fields are ``None`` when not running from a git checkout (e.g.
+    a pip-installed copy on a cluster) — the run proceeds normally.
+    """
+    sha = _git_output(["rev-parse", "HEAD"])
+    porcelain = _git_output(["status", "--porcelain"])
+    versions = {}
+    for pkg in _PROVENANCE_PACKAGES:
+        try:
+            versions[f"version_{pkg}"] = importlib_metadata.version(pkg)
+        except importlib_metadata.PackageNotFoundError:
+            versions[f"version_{pkg}"] = None
+    return {
+        "git_sha": sha,
+        "git_dirty": bool(porcelain) if porcelain is not None else None,
+        "python_version": sys.version.split()[0],
+        **versions,
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -84,6 +159,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--rom", required=True, type=str,
         help="Path to Pokemon Red ROM (.gb) file.",
+    )
+    p.add_argument(
+        "--rom-sha256", type=str, default=None,
+        help=(
+            "Expected SHA-256 of the ROM file.  If set, the script "
+            "verifies the actual hash before training and aborts on "
+            "mismatch.  The hash is always logged (and ends up in W&B "
+            "config) so the paper's reproducibility appendix can record "
+            "exactly which dump produced each run."
+        ),
     )
 
     # ── Environment ──────────────────────────────────────────────────
@@ -234,23 +319,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Seeding
-# ──────────────────────────────────────────────────────────────────────
-
-def set_global_seeds(seed: int) -> None:
-    """Set seeds for numpy, torch, and Python stdlib."""
-    import random
-
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
-    logger.info(f"Global seeds set to {seed}")
-
-
-# ──────────────────────────────────────────────────────────────────────
 # Vectorised environment construction
 # ──────────────────────────────────────────────────────────────────────
 
@@ -323,9 +391,29 @@ def _make_vec_env(
 def train(args: argparse.Namespace) -> None:
     """Run a full training pipeline."""
 
+    # ── ROM hash verification ────────────────────────────────────────
+    # Always compute and log the SHA-256 so it ends up in the W&B run
+    # config and the paper's reproducibility appendix.  If --rom-sha256
+    # is set, abort on mismatch — otherwise the run continues but the
+    # hash is recorded for post-hoc disambiguation.
+    rom_sha256 = compute_rom_sha256(args.rom)
+    logger.info("ROM sha256: %s  (%s)", rom_sha256, args.rom)
+    if args.rom_sha256 is not None:
+        if rom_sha256.lower() != args.rom_sha256.lower():
+            raise RomHashMismatchError(
+                f"ROM at {args.rom} has SHA-256 {rom_sha256} but "
+                f"--rom-sha256 expected {args.rom_sha256}.  Aborting "
+                f"to prevent silently training on the wrong dump."
+            )
+        logger.info("ROM hash matches --rom-sha256.")
+
     # ── Seeding ──────────────────────────────────────────────────────
+    # seed_everything seeds Python random, NumPy, torch (CPU/CUDA), PYTHONHASHSEED,
+    # and SB3's set_random_seed.  The per-rank seeding for SubprocVecEnv workers
+    # happens later via env.seed(args.seed), which sends seed+rank to each
+    # subprocess so parallel envs produce uncorrelated trajectories.
     if args.seed is not None:
-        set_global_seeds(args.seed)
+        seed_everything(args.seed)
 
     # ── Directories ──────────────────────────────────────────────────
     create_directories(args.save_dir)
@@ -353,6 +441,13 @@ def train(args: argparse.Namespace) -> None:
         )
 
     env = _make_vec_env(args, n_envs, reward_config)
+
+    # Per-rank seeding: SubprocVecEnv.seed(seed) sends seed+idx to each child
+    # process, so rank 0 gets args.seed, rank 1 gets args.seed+1, etc.  This
+    # de-correlates parallel envs while keeping the run deterministic given
+    # (args.seed, n_envs).  Skipped if no seed was provided.
+    if args.seed is not None:
+        env.seed(args.seed)
 
     logger.info(
         f"Environment ready  "
@@ -404,8 +499,28 @@ def train(args: argparse.Namespace) -> None:
             "save_state": args.save_state or "none",
             "seed": args.seed,
             "lstm_hidden_size": args.lstm_hidden_size,
+            "n_envs": args.n_envs,
+            # ROM SHA-256: recorded in W&B so the paper's reproducibility
+            # appendix can match runs to ROM dumps unambiguously.
+            "rom_sha256": rom_sha256,
         }
     )
+    provenance = collect_provenance()
+    effective_config.update(provenance)
+    if provenance["git_sha"] is None:
+        logger.warning("Not a git checkout — run config will lack a git SHA")
+    elif provenance["git_dirty"]:
+        logger.warning(
+            "Working tree has uncommitted changes — run is not exactly "
+            f"reproducible from git SHA {provenance['git_sha'][:12]}"
+        )
+
+    # Persist the config locally too, so runs remain traceable without
+    # W&B (--no-wandb, offline clusters, or a failed wandb.init).
+    run_config_path = os.path.join(args.save_dir, "run_config.json")
+    with open(run_config_path, "w") as fh:
+        json.dump(effective_config, fh, indent=2, sort_keys=True, default=str)
+    logger.info(f"Run config written to {run_config_path}")
 
     param_count = sum(p.numel() for p in model.policy.parameters())
     logger.info(f"Model created — {param_count:,} parameters")
