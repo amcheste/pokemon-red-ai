@@ -178,7 +178,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--reward-strategy", type=str, default="events",
-        choices=["standard", "exploration", "progress", "sparse", "events"],
+        choices=["standard", "exploration", "progress", "sparse", "events",
+                 "pleines"],
         help="Reward calculator strategy.",
     )
     p.add_argument(

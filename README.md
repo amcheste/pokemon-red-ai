@@ -216,10 +216,15 @@ transition 0 → 1 awards a fixed positive reward exactly once per
 episode.  A small per-step time penalty, a new-map discovery bonus,
 and a party-faint penalty are also active by default.
 
-Four other reward strategies are available
-(`standard` / `exploration` / `progress` / `sparse`); see
+Five other reward strategies are available
+(`standard` / `exploration` / `progress` / `sparse` / `pleines`); see
 [`pokemon_red_ai/environment/rewards.py`](pokemon_red_ai/environment/rewards.py)
-for the full menu and configuration knobs.
+for the full menu and configuration knobs.  The `pleines` strategy is
+a faithful reproduction of the dense reward from
+[Pleines et al. 2025](https://arxiv.org/abs/2502.19920) (event +
+navigation + healing + level components, exact published scalars),
+provided as a comparability anchor — its documented reward-hacking
+vulnerabilities are deliberately preserved.
 
 The flag list with bit offsets is in
 [`pokemon_red_ai/game/event_flags.py`](pokemon_red_ai/game/event_flags.py),

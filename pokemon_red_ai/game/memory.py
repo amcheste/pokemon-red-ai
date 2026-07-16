@@ -32,6 +32,7 @@ MEMORY_ADDRESSES = {
     # Pokemon party
     'party_count': 0xD163,  # Number of Pokemon in party (0-6)
     'party_species_1': 0xD164,  # First Pokemon species ID
+    'party_data_start': 0xD16B,  # wPartyMon1: first 44-byte party_struct
 
     # Battle state
     'battle_type': 0xD057,     # wIsInBattle: 0=overworld, 1=wild, 2=trainer
@@ -165,6 +166,82 @@ def read_player_stats(memory) -> Dict[str, int]:
     }
 
 
+# pret/pokered party_struct layout (one per party member, contiguous
+# from wPartyMon1).  Multi-byte stats are stored BIG-endian in Gen 1,
+# unlike the Game Boy's little-endian pointers.
+PARTY_MON_SIZE = 44          # sizeof(party_struct)
+PARTY_MON_HP_OFFSET = 1      # +1..+2: current HP (big-endian)
+PARTY_MON_LEVEL_OFFSET = 33  # +33: level (wPartyMon1Level = 0xD18C)
+PARTY_MON_MAX_HP_OFFSET = 34  # +34..+35: max HP (big-endian)
+
+# wEventFlags is a 320-byte bit-array holding every game event flag.
+EVENT_FLAGS_SIZE = 320
+
+
+def read_party_data(memory) -> list:
+    """
+    Read per-Pokemon level and HP for every party member.
+
+    Walks the contiguous ``party_struct`` array from ``wPartyMon1``
+    (verified against the pret/pokered disassembly).  HP values are
+    big-endian in Gen 1 and are decoded accordingly.
+
+    Args:
+        memory: PyBoy memory object
+
+    Returns:
+        List of dicts (one per party member, in party order), each with
+        'level', 'current_hp' and 'max_hp' keys.  Empty list if the
+        party is empty.
+    """
+    count = min(read_memory_value(memory, MEMORY_ADDRESSES['party_count']), 6)
+    base = MEMORY_ADDRESSES['party_data_start']
+
+    party = []
+    for i in range(count):
+        mon = base + i * PARTY_MON_SIZE
+        current_hp = (
+            (read_memory_value(memory, mon + PARTY_MON_HP_OFFSET) << 8)
+            | read_memory_value(memory, mon + PARTY_MON_HP_OFFSET + 1)
+        )
+        max_hp = (
+            (read_memory_value(memory, mon + PARTY_MON_MAX_HP_OFFSET) << 8)
+            | read_memory_value(memory, mon + PARTY_MON_MAX_HP_OFFSET + 1)
+        )
+        party.append({
+            'level': read_memory_value(memory, mon + PARTY_MON_LEVEL_OFFSET),
+            'current_hp': current_hp,
+            'max_hp': max_hp,
+        })
+    return party
+
+
+def read_event_flag_count(memory) -> int:
+    """
+    Count set bits across the full wEventFlags array (320 bytes).
+
+    This is the game's own notion of "completed events" — trainer
+    battles, NPC interactions, storyline progression — used by the
+    Pleines et al. (2025) event reward (+2 per newly set flag).
+
+    Args:
+        memory: PyBoy memory object
+
+    Returns:
+        Total number of event flags currently set.
+    """
+    base = MEMORY_ADDRESSES['event_flags_start']
+    try:
+        # PyBoy supports slice reads — one call instead of 320.
+        block = memory[base:base + EVENT_FLAGS_SIZE]
+        return sum(bin(byte).count('1') for byte in block)
+    except Exception:
+        return sum(
+            bin(read_memory_value(memory, base + i)).count('1')
+            for i in range(EVENT_FLAGS_SIZE)
+        )
+
+
 def read_game_state(memory) -> Dict[str, int]:
     """
     Read game state indicators.
@@ -287,6 +364,8 @@ def get_comprehensive_state(memory) -> Dict[str, Union[int, float, str, Dict]]:
         'badge_count': get_badge_count(stats['badges']),
         'in_game': is_in_game(memory),
         'is_alive': stats['current_hp'] > 0,
+        'party': read_party_data(memory),
+        'event_flag_count': read_event_flag_count(memory),
     }
 
     # Event flags and battle state (PR #1 additions)
