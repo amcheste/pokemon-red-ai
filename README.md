@@ -11,7 +11,7 @@
 [![CI](https://github.com/amcheste/pokemon-red-ai/actions/workflows/test.yml/badge.svg)](https://github.com/amcheste/pokemon-red-ai/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-0B0B0C)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-1F4D3A)](LICENSE)
-[![Status](https://img.shields.io/badge/status-research%20preview-orange)](#roadmap)
+[![Status](https://img.shields.io/badge/status-research%20preview-orange)](#citation)
 
 </div>
 
@@ -33,11 +33,10 @@ confidence intervals via
 ## Demo
 
 > [!NOTE]
-> Demo GIF and dashboard screenshot are forthcoming with the EWRL 2026
-> pilot run. To regenerate them locally, run the smoketest in
-> [Quick start](#quick-start); the agent recording can be captured
-> from the PyBoy window and the dashboard screenshot from
-> `scripts/monitor.py`.
+> Demo GIF and dashboard screenshot are forthcoming. To regenerate
+> them locally, run the smoketest in [Quick start](#quick-start); the
+> agent recording can be captured from the PyBoy window and the
+> dashboard screenshot from `scripts/monitor.py`.
 
 <div align="center">
 
@@ -48,19 +47,6 @@ confidence intervals via
 <img src="docs/images/dashboard-monitor.png" alt="Streamlit live training dashboard (placeholder — screenshot scripts/monitor.py)" width="80%" />
 
 </div>
-
----
-
-## What success looks like
-
-The EWRL 2026 pilot grid measures Boulder Badge win-rate over
-3 treatments × 3 seeds × 10M env-steps from a fixed Pallet Town save
-state.  At 10M steps reaching Brock is a *stretch* goal — we report
-the primary metric alongside two informative secondary metrics
-(best-episode reward and per-flag first-episode-triggered) to capture
-progress that doesn't yet cross the Boulder Badge bar.  Final numbers
-will appear in the EWRL 2026 paper once pilots complete; the live W&B
-project is the up-to-date source while runs are in flight.
 
 ---
 
@@ -78,7 +64,7 @@ project is the up-to-date source while runs are in flight.
 - [Use as a library](#use-as-a-library)
 - [Troubleshooting](#troubleshooting)
 - [Running the tests](#running-the-tests)
-- [Roadmap](#roadmap)
+- [Project status](#project-status)
 - [Related work and inspiration](#related-work-and-inspiration)
 - [Citation](#citation)
 - [Contributing](#contributing)
@@ -151,9 +137,10 @@ the pipeline is ready for [full experiments](#full-experiments).
 
 ## Full experiments
 
-The canonical 9-pilot grid (3 treatments × 3 seeds × 10M env-steps)
-backs the workshop paper's main result.  On an Apple M3 Max with
-3-pilot concurrency it takes ~33 hours wall-clock.
+The canonical 9-run grid (3 treatments × 3 seeds × 10M env-steps)
+produces the documented baseline results for the three observation
+treatments.  On an Apple M3 Max with 3-run concurrency it takes
+~33 hours wall-clock.
 
 ```bash
 # Launch the 9-pilot grid (caffeinate-wrapped on macOS)
@@ -182,7 +169,7 @@ Selected via `--observation-type` on `scripts/train.py`.
 | Treatment | Observation | Encoder | Params | Feature dim |
 |-----------|-------------|---------|--------|-------------|
 | `pixel`   | 80×72×1 grayscale Game Boy screen | NatureCNN ([Mnih et al. 2015](https://www.nature.com/articles/nature14236)), `features_dim=256` | ~564K | 256 |
-| `symbolic` | Player position, party stats, 18-slot flag bit-vector (15 active flags from the pre-registered set), exploration counters (29 features total) | 3-layer MLP `29 → 640 → 640 → 256` | ~594K | 256 |
+| `symbolic` | Player position, party stats, 18-slot flag bit-vector (15 active flags from the 18-flag set), exploration counters (29 features total) | 3-layer MLP `29 → 640 → 640 → 256` | ~594K | 256 |
 | `hybrid`  | `pixel` ∪ `symbolic` streams | NatureCNN(256) + symbolic MLP(256), concatenated | ~1.16M | 512 |
 
 The pixel and symbolic encoders are sized to within 10% on trainable
@@ -191,7 +178,7 @@ comparing modalities (Henderson et al. 2018; Engstrom et al. 2020;
 Andrychowicz et al. 2021). Strict per-forward FLOP matching across CNN
 and MLP architectures distorts encoder design and is reported
 transparently rather than enforced. Per-condition learning rates are
-selected from a pre-registered log-uniform grid following Eimer et al.
+selected from a fixed log-uniform grid following Eimer et al.
 (2023).
 
 Run [`scripts/check_encoder_capacity.py`](scripts/check_encoder_capacity.py)
@@ -305,17 +292,12 @@ separate job that re-verifies the event flag IDs against the live
 
 ---
 
-## Roadmap
+## Project status
 
-This codebase is the engine for a planned 3-paper research cascade on
-observation representations in long-horizon, sparse-reward RL.
-
-| Milestone | Target | Status |
-|-----------|--------|--------|
-| **M2** | EWRL 2026 workshop submission — capacity-matched pixel vs symbolic vs hybrid pilot | In progress; pilot infrastructure complete, runs launching post-audit |
-| **M3** | PokeGym public release on PyPI | Planned, post-EWRL |
-| **M4** | NeurIPS 2026 workshop — 750M+ env-step main result, 5 seeds × 3 treatments | Planned |
-| **M5** | TMLR campaign — full ablation set, generalization test, ~4.2B env-step budget | Planned |
+This toolkit is a research preview under active development.  It
+backs ongoing research on observation representations in long-horizon
+reinforcement learning; if you build on it, please see
+[Citation](#citation).
 
 The tiered testing plan tracking future regression / acceptance work
 lives in [`docs/testing_roadmap.md`](docs/testing_roadmap.md).
@@ -341,14 +323,12 @@ Where this project goes further:
 
 - **Capacity-matched modality comparison** (pixel vs symbolic vs
   hybrid) at <10% trainable-parameter gap, with rliable IQM and 95%
-  CIs.  The central scientific question of the paper.
-- **Pre-registered analysis plan** + compute ledger + CI-gated
-  invariants (event flag IDs locked against `pret/pokered`, encoder
-  fairness asserted on every push, full seeding-chain determinism
-  tested end-to-end).
-- **Reproducibility plumbing**: ROM SHA-256 verification,
-  deterministic eval harness, frozen-result paper artifact in a
-  separate sibling repo.
+  CIs.
+- **CI-gated invariants**: event flag IDs locked against
+  `pret/pokered`, encoder fairness asserted on every push, full
+  seeding-chain determinism tested end-to-end.
+- **Reproducibility plumbing**: ROM SHA-256 verification and a
+  deterministic evaluation harness.
 
 If you want a fast baseline, start with one of the projects above.
 If you want a paper-grade controlled experiment with an audit trail,
