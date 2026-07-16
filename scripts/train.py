@@ -183,6 +183,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reward calculator strategy.",
     )
     p.add_argument(
+        "--dynamic-episode-budget", action="store_true",
+        help=(
+            "Use the Pleines et al. 2025 dynamic episode budget "
+            "(10,240 steps + 2,048 per completed event) instead of the "
+            "fixed --max-episode-steps truncation."
+        ),
+    )
+    p.add_argument(
         "--observation-type", type=str, default="multi_modal",
         choices=["multi_modal", "screen_only", "minimal", "pixel", "symbolic", "hybrid"],
         help="Observation representation.",
@@ -349,6 +357,7 @@ def _make_env_factory(
             reward_config=reward_config,
             observation_type=args.observation_type,
             save_state_path=args.save_state,
+            dynamic_episode_budget=args.dynamic_episode_budget,
         )
         # Per-env Monitor file.  ``info_keywords`` makes Monitor copy
         # our custom per-step metrics into ``ep_info_buffer``, which is
