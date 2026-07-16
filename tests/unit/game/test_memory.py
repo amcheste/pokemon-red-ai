@@ -14,6 +14,7 @@ from pokemon_red_ai.game.memory import (
     MAP_IDS,
     BADGE_FLAGS,
     read_memory_value,
+    read_16bit_big_endian,
     read_player_position,
     read_player_stats,
     read_game_state,
@@ -33,7 +34,7 @@ class TestMemoryAddresses:
         """Test that all required memory addresses are defined."""
         required_addresses = [
             'player_x', 'player_y', 'map_id', 'player_level',
-            'current_hp_low', 'current_hp_high', 'max_hp_low', 'max_hp_high',
+            'current_hp', 'max_hp',
             'badges', 'game_state', 'menu_state', 'party_count'
         ]
 
@@ -41,6 +42,17 @@ class TestMemoryAddresses:
             assert addr in MEMORY_ADDRESSES
             assert isinstance(MEMORY_ADDRESSES[addr], int)
             assert MEMORY_ADDRESSES[addr] >= 0
+
+    def test_hp_addresses_match_pret_pokered(self):
+        """HP addresses must match the pret/pokered disassembly symbols.
+
+        wPartyMon1HP is 0xD16C and wPartyMon1MaxHP is 0xD18D.  The bytes
+        at 0xD16E/0xD16F are wPartyMon1BoxLevel/wPartyMon1Status — reading
+        max HP from there was a real bug (see PR fixing party HP reads).
+        """
+        assert MEMORY_ADDRESSES['current_hp'] == 0xD16C
+        assert MEMORY_ADDRESSES['max_hp'] == 0xD18D
+        assert MEMORY_ADDRESSES['player_level'] == 0xD18C
 
     def test_map_ids_exist(self):
         """Test that map ID constants are defined."""
@@ -103,6 +115,26 @@ class TestReadMemoryValue:
 
         assert value == 0
 
+    def test_read_16bit_big_endian(self):
+        """Gen 1 stat values are stored high byte first."""
+        mock_memory = Mock()
+        # High byte = 0x01, low byte = 0x2C -> 0x012C = 300
+        mock_memory.__getitem__ = Mock(side_effect=[0x01, 0x2C])
+
+        value = read_16bit_big_endian(mock_memory, 0xD16C)
+
+        assert value == 300
+        assert mock_memory.__getitem__.call_count == 2
+
+    def test_read_16bit_big_endian_error_handling(self):
+        """Test error handling for big-endian reads."""
+        mock_memory = Mock()
+        mock_memory.__getitem__ = Mock(side_effect=IndexError("Memory error"))
+
+        value = read_16bit_big_endian(mock_memory, 0xD16C)
+
+        assert value == 0
+
 
 class TestReadPlayerPosition:
     """Test player position reading functions."""
@@ -150,10 +182,10 @@ class TestReadPlayerData:
         def memory_side_effect(addr):
             memory_map = {
                 MEMORY_ADDRESSES['player_level']: 15,
-                MEMORY_ADDRESSES['current_hp_low']: 0x32,  # 50 low byte
-                MEMORY_ADDRESSES['current_hp_high']: 0x00,  # 50 high byte
-                MEMORY_ADDRESSES['max_hp_low']: 0x3C,      # 60 low byte
-                MEMORY_ADDRESSES['max_hp_high']: 0x00,     # 60 high byte
+                MEMORY_ADDRESSES['current_hp']: 0x00,      # 50, high byte first
+                MEMORY_ADDRESSES['current_hp'] + 1: 0x32,
+                MEMORY_ADDRESSES['max_hp']: 0x00,          # 60, high byte first
+                MEMORY_ADDRESSES['max_hp'] + 1: 0x3C,
                 MEMORY_ADDRESSES['badges']: 3,
                 MEMORY_ADDRESSES['party_count']: 2
             }
@@ -177,10 +209,10 @@ class TestReadPlayerData:
         def memory_side_effect(addr):
             memory_map = {
                 MEMORY_ADDRESSES['player_level']: 10,
-                MEMORY_ADDRESSES['current_hp_low']: 0,     # 0 HP
-                MEMORY_ADDRESSES['current_hp_high']: 0,
-                MEMORY_ADDRESSES['max_hp_low']: 50,        # Max HP 50
-                MEMORY_ADDRESSES['max_hp_high']: 0,
+                MEMORY_ADDRESSES['current_hp']: 0,         # 0 HP
+                MEMORY_ADDRESSES['current_hp'] + 1: 0,
+                MEMORY_ADDRESSES['max_hp']: 0,             # Max HP 50
+                MEMORY_ADDRESSES['max_hp'] + 1: 50,
                 MEMORY_ADDRESSES['badges']: 0,
                 MEMORY_ADDRESSES['party_count']: 1
             }
@@ -204,10 +236,10 @@ class TestReadPlayerData:
         def memory_side_effect(addr):
             memory_map = {
                 MEMORY_ADDRESSES['player_level']: 20,
-                MEMORY_ADDRESSES['current_hp_low']: 100,   # 100 HP
-                MEMORY_ADDRESSES['current_hp_high']: 0,
-                MEMORY_ADDRESSES['max_hp_low']: 100,       # Max HP 100
-                MEMORY_ADDRESSES['max_hp_high']: 0,
+                MEMORY_ADDRESSES['current_hp']: 0,         # 100 HP
+                MEMORY_ADDRESSES['current_hp'] + 1: 100,
+                MEMORY_ADDRESSES['max_hp']: 0,             # Max HP 100
+                MEMORY_ADDRESSES['max_hp'] + 1: 100,
                 MEMORY_ADDRESSES['badges']: 5,
                 MEMORY_ADDRESSES['party_count']: 6
             }
@@ -232,10 +264,10 @@ class TestReadPlayerData:
         def memory_side_effect(addr):
             memory_map = {
                 MEMORY_ADDRESSES['player_level']: 1,
-                MEMORY_ADDRESSES['current_hp_low']: 0,
-                MEMORY_ADDRESSES['current_hp_high']: 0,
-                MEMORY_ADDRESSES['max_hp_low']: 0,  # Max HP is 0
-                MEMORY_ADDRESSES['max_hp_high']: 0,
+                MEMORY_ADDRESSES['current_hp']: 0,
+                MEMORY_ADDRESSES['current_hp'] + 1: 0,
+                MEMORY_ADDRESSES['max_hp']: 0,  # Max HP is 0
+                MEMORY_ADDRESSES['max_hp'] + 1: 0,
                 MEMORY_ADDRESSES['badges']: 0,
                 MEMORY_ADDRESSES['party_count']: 0
             }
@@ -250,6 +282,55 @@ class TestReadPlayerData:
         assert stats['current_hp'] == 0
         # hp_ratio calculation should use max(max_hp, 1) to avoid division by zero
         assert stats['hp_ratio'] == 0.0
+
+    def test_read_player_stats_hp_is_big_endian(self):
+        """Regression test: HP must decode big-endian (high byte first).
+
+        A level-5 starter with 20 HP stores bytes 00 14 at wPartyMon1HP.
+        The old little-endian decode returned 0x1400 = 5120 instead of 20.
+        Uses a >255 value so the two byte orders cannot coincide.
+        """
+        def memory_side_effect(addr):
+            memory_map = {
+                MEMORY_ADDRESSES['current_hp']: 0x01,      # 0x012C = 300
+                MEMORY_ADDRESSES['current_hp'] + 1: 0x2C,
+                MEMORY_ADDRESSES['max_hp']: 0x01,          # 0x0158 = 344
+                MEMORY_ADDRESSES['max_hp'] + 1: 0x58,
+            }
+            return memory_map.get(addr, 0)
+
+        mock_memory = Mock()
+        mock_memory.__getitem__ = Mock(side_effect=memory_side_effect)
+
+        stats = read_player_stats(mock_memory)
+
+        assert stats['current_hp'] == 300  # not 0x2C01 = 11265
+        assert stats['max_hp'] == 344      # not 0x5801 = 22529
+
+    def test_read_player_stats_ignores_box_level_and_status(self):
+        """Regression test: max HP comes from 0xD18D, not 0xD16E/0xD16F.
+
+        0xD16E is wPartyMon1BoxLevel and 0xD16F is wPartyMon1Status.  The
+        old code read max HP from those bytes, so a poisoned Pokemon's
+        status byte corrupted the max-HP high byte.
+        """
+        def memory_side_effect(addr):
+            memory_map = {
+                0xD16C: 0x00, 0xD16D: 18,   # current HP = 18
+                0xD16E: 5,                  # box level (garbage for HP)
+                0xD16F: 0x08,               # status: poisoned
+                0xD18D: 0x00, 0xD18E: 23,   # max HP = 23
+            }
+            return memory_map.get(addr, 0)
+
+        mock_memory = Mock()
+        mock_memory.__getitem__ = Mock(side_effect=memory_side_effect)
+
+        stats = read_player_stats(mock_memory)
+
+        assert stats['current_hp'] == 18
+        assert stats['max_hp'] == 23
+        assert abs(stats['hp_ratio'] - (18 / 23)) < 0.01
 
 
 class TestGameState:
@@ -457,10 +538,10 @@ class TestComprehensiveState:
                 MEMORY_ADDRESSES['player_y']: 5,
                 MEMORY_ADDRESSES['map_id']: 1,
                 MEMORY_ADDRESSES['player_level']: 10,
-                MEMORY_ADDRESSES['current_hp_low']: 0,     # Dead Pokemon
-                MEMORY_ADDRESSES['current_hp_high']: 0,
-                MEMORY_ADDRESSES['max_hp_low']: 50,
-                MEMORY_ADDRESSES['max_hp_high']: 0,
+                MEMORY_ADDRESSES['current_hp']: 0,         # Dead Pokemon
+                MEMORY_ADDRESSES['current_hp'] + 1: 0,
+                MEMORY_ADDRESSES['max_hp']: 0,             # Max HP 50
+                MEMORY_ADDRESSES['max_hp'] + 1: 50,
                 MEMORY_ADDRESSES['badges']: 1,  # One badge
                 MEMORY_ADDRESSES['party_count']: 1,
                 MEMORY_ADDRESSES['game_state']: 1,
