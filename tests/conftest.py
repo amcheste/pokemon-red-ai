@@ -104,9 +104,10 @@ def mock_memory_from_state():
                 MEMORY_ADDRESSES['party_count']: 1,
                 MEMORY_ADDRESSES['game_state']: 1,
                 MEMORY_ADDRESSES['menu_state']: 0,
-                MEMORY_ADDRESSES['money_low']: 100,
-                MEMORY_ADDRESSES['money_mid']: 0,
-                MEMORY_ADDRESSES['money_high']: 0
+                # Money is big-endian BCD: 100 money = bytes 00 01 00
+                MEMORY_ADDRESSES['money']: 0x00,
+                MEMORY_ADDRESSES['money'] + 1: 0x01,
+                MEMORY_ADDRESSES['money'] + 2: 0x00
             }
 
         mock_memory = Mock()

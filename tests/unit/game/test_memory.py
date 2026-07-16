@@ -295,17 +295,25 @@ class TestGameState:
 
 
 class TestMoneyReading:
-    """Test money reading functionality."""
+    """Test money reading functionality.
 
-    def test_read_money(self):
-        """Test reading player money (24-bit value)."""
+    wPlayerMoney (0xD347) is 3 bytes of big-endian binary-coded decimal —
+    each nibble is one decimal digit, most-significant byte first.
+    """
+
+    def test_money_address_matches_pret_pokered(self):
+        """wPlayerMoney is 0xD347 per the pret/pokered disassembly symbols."""
+        assert MEMORY_ADDRESSES['money'] == 0xD347
+
+    def test_read_money_starting_amount(self):
+        """The starting ₽3000 is stored as bytes 00 30 00 (verified in PyBoy)."""
         mock_memory = Mock()
 
         def memory_side_effect(addr):
             memory_map = {
-                MEMORY_ADDRESSES['money_low']: 0x50,    # Low byte (80)
-                MEMORY_ADDRESSES['money_mid']: 0xC3,    # Mid byte (195)
-                MEMORY_ADDRESSES['money_high']: 0x00    # High byte (0)
+                MEMORY_ADDRESSES['money']: 0x00,        # Most-significant byte
+                MEMORY_ADDRESSES['money'] + 1: 0x30,
+                MEMORY_ADDRESSES['money'] + 2: 0x00,    # Least-significant byte
             }
             return memory_map.get(addr, 0)
 
@@ -313,33 +321,57 @@ class TestMoneyReading:
 
         money = read_money(mock_memory)
 
-        # Should be 0x00C350 = 50000
-        expected = 0x50 | (0xC3 << 8) | (0x00 << 16)  # 80 + 49920 + 0 = 50000
-        assert money == expected
+        assert money == 3000
+
+    def test_read_money_all_digits(self):
+        """BCD bytes 12 34 56 decode to 123456."""
+        mock_memory = Mock()
+
+        def memory_side_effect(addr):
+            memory_map = {
+                MEMORY_ADDRESSES['money']: 0x12,
+                MEMORY_ADDRESSES['money'] + 1: 0x34,
+                MEMORY_ADDRESSES['money'] + 2: 0x56,
+            }
+            return memory_map.get(addr, 0)
+
+        mock_memory.__getitem__ = Mock(side_effect=memory_side_effect)
+
+        money = read_money(mock_memory)
+
+        assert money == 123456
 
     def test_read_money_max_value(self):
-        """Test reading maximum money value."""
+        """Test reading maximum money value (999999 = BCD bytes 99 99 99)."""
         mock_memory = Mock()
-
-        def memory_side_effect(addr):
-            memory_map = {
-                MEMORY_ADDRESSES['money_low']: 0xFF,    # 255
-                MEMORY_ADDRESSES['money_mid']: 0xFF,    # 255
-                MEMORY_ADDRESSES['money_high']: 0xFF    # 255
-            }
-            return memory_map.get(addr, 0)
-
-        mock_memory.__getitem__ = Mock(side_effect=memory_side_effect)
+        mock_memory.__getitem__ = Mock(return_value=0x99)
 
         money = read_money(mock_memory)
 
-        # Should be 0xFFFFFF = 16777215
-        assert money == 0xFFFFFF
+        assert money == 999999
 
     def test_read_money_zero(self):
         """Test reading zero money."""
         mock_memory = Mock()
         mock_memory.__getitem__ = Mock(return_value=0)
+
+        money = read_money(mock_memory)
+
+        assert money == 0
+
+    def test_read_money_non_bcd_returns_zero(self):
+        """Bytes with nibbles > 9 are not valid BCD — return 0, don't garble."""
+        mock_memory = Mock()
+        mock_memory.__getitem__ = Mock(return_value=0xFF)
+
+        money = read_money(mock_memory)
+
+        assert money == 0
+
+    def test_read_money_read_failure_returns_zero(self):
+        """A failed memory read yields 0 from read_memory_value → money 0."""
+        mock_memory = Mock()
+        mock_memory.__getitem__ = Mock(side_effect=IndexError("Memory error"))
 
         money = read_money(mock_memory)
 
@@ -465,9 +497,9 @@ class TestComprehensiveState:
                 MEMORY_ADDRESSES['party_count']: 1,
                 MEMORY_ADDRESSES['game_state']: 1,
                 MEMORY_ADDRESSES['menu_state']: 0,
-                MEMORY_ADDRESSES['money_low']: 0,
-                MEMORY_ADDRESSES['money_mid']: 0,
-                MEMORY_ADDRESSES['money_high']: 0,
+                MEMORY_ADDRESSES['money']: 0,
+                MEMORY_ADDRESSES['money'] + 1: 0,
+                MEMORY_ADDRESSES['money'] + 2: 0,
             }
             return memory_map.get(addr, 0)
 
