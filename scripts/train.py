@@ -64,6 +64,7 @@ from pokemon_red_ai.training.models import (
 from pokemon_red_ai.training.callbacks import (
     TrainingCallback,
     MonitoringCallback,
+    RewardComponentTraceCallback,
     MONITORED_INFO_KEYS,
 )
 from pokemon_red_ai.training.alerts import (
@@ -315,6 +316,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # ── Misc ─────────────────────────────────────────────────────────
+    p.add_argument(
+        "--no-reward-trace", action="store_true",
+        help="Disable the per-step reward-component trace "
+             "(<save-dir>/reward_trace.ndjson.gz).  On by default because "
+             "the trace cannot be reconstructed after a run; disable only "
+             "for throwaway runs.",
+    )
     p.add_argument(
         "--show-game", action="store_true",
         help="Show the PyBoy emulator window during training.",
@@ -583,6 +591,17 @@ def train(args: argparse.Namespace) -> None:
                 save_freq=args.save_freq,
                 save_path=args.save_dir,
                 screen_capture_freq=args.screen_capture_freq,
+                verbose=1,
+            )
+        )
+
+    # Per-step reward-component trace (AMC-233).  Deliberately NOT tied
+    # to W&B: the reward-hacking analysis needs this data per seed and
+    # it cannot be recovered after the fact.
+    if not args.no_reward_trace:
+        callbacks.append(
+            RewardComponentTraceCallback(
+                trace_path=os.path.join(args.save_dir, "reward_trace.ndjson.gz"),
                 verbose=1,
             )
         )

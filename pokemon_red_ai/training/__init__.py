@@ -16,6 +16,8 @@ from .callbacks import (
     PerformanceMonitor,
     WandbCallback,
     MonitoringCallback,
+    RewardComponentTraceCallback,
+    iter_reward_trace,
     MONITORED_INFO_KEYS,
 )
 
@@ -57,6 +59,8 @@ __all__ = [
     "PerformanceMonitor",
     "WandbCallback",
     "MonitoringCallback",
+    "RewardComponentTraceCallback",
+    "iter_reward_trace",
     "MONITORED_INFO_KEYS",
 
     # Alerting (AMC-78)
