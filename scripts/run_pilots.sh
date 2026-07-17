@@ -24,6 +24,7 @@ PYTHON="${PYTHON:-./venv/bin/python3}"
 ROM_PATH=""
 SAVE_STATE="states/s0_post_intro.state"
 TOTAL_TIMESTEPS="10000000"
+REWARD_STRATEGY="events"
 TREATMENTS="pixel,symbolic,hybrid"
 SEEDS="42,123,456"
 SAVE_ROOT="./training_output"
@@ -59,6 +60,10 @@ Optional:
                             PyTorch device for the policy network.
                             Default: mps (Apple Silicon GPU).  Set to
                             'auto' on non-Apple-Silicon hardware.
+  --reward-strategy NAME    Reward strategy passed to every train.py
+                            invocation (events, pleines, standard, ...).
+                            Default: events.  The Paper A baseline grid
+                            (AMC-242) must pass --reward-strategy pleines.
   --treatments LIST         Comma-separated observation types.
                             Default: pixel,symbolic,hybrid
   --seeds LIST              Comma-separated seeds.
@@ -117,6 +122,7 @@ while [[ $# -gt 0 ]]; do
     --rom)               ROM_PATH="$2";               shift 2 ;;
     --save-state)        SAVE_STATE="$2";             shift 2 ;;
     --total-timesteps)   TOTAL_TIMESTEPS="$2";        shift 2 ;;
+    --reward-strategy)   REWARD_STRATEGY="$2";        shift 2 ;;
     --n-envs)            N_ENVS="$2";                 shift 2 ;;
     --device)            DEVICE="$2";                 shift 2 ;;
     --treatments)        TREATMENTS="$2";             shift 2 ;;
@@ -219,6 +225,7 @@ echo "────────────────────────�
 echo "ROM:               $ROM_PATH"
 echo "Save state:        $SAVE_STATE"
 echo "Steps per run:     $TOTAL_TIMESTEPS"
+echo "Reward strategy:   $REWARD_STRATEGY"
 echo "Treatments:        ${TREATMENTS_ARR[*]}"
 echo "Seeds:             ${SEEDS_ARR[*]}"
 echo "Total runs:        $TOTAL_RUNS"
@@ -257,7 +264,7 @@ build_cmd() {
     --save-state "$SAVE_STATE"
     --observation-type "$treatment"
     --algorithm "RecurrentPPO"
-    --reward-strategy "events"
+    --reward-strategy "$REWARD_STRATEGY"
     --total-timesteps "$TOTAL_TIMESTEPS"
     --n-envs "$N_ENVS"
     --device "$DEVICE"
@@ -304,7 +311,7 @@ run_one() {
     --save-state "$SAVE_STATE"
     --observation-type "$treatment"
     --algorithm "RecurrentPPO"
-    --reward-strategy "events"
+    --reward-strategy "$REWARD_STRATEGY"
     --total-timesteps "$TOTAL_TIMESTEPS"
     --n-envs "$N_ENVS"
     --device "$DEVICE"

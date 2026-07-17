@@ -18,6 +18,10 @@ training_output/
 wandb/
 logs/
 
+# Machine-local alerts config (may hold Slack webhooks / SMTP creds) —
+# copy configs/alerts.example.yaml to configs/alerts.yaml locally
+configs/alerts.yaml
+
 # IDE / OS
 .idea/
 .vscode/
