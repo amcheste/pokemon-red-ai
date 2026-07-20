@@ -212,14 +212,15 @@ class TestAgentGameState:
             def memory_side_effect(addr):
                 if addr == MEMORY_ADDRESSES['player_level']:
                     return 15
-                elif addr == MEMORY_ADDRESSES['current_hp_low']:
+                # HP values are stored big-endian: high byte first
+                elif addr == MEMORY_ADDRESSES['current_hp']:
+                    return 0
+                elif addr == MEMORY_ADDRESSES['current_hp'] + 1:
                     return 50
-                elif addr == MEMORY_ADDRESSES['current_hp_high']:
+                elif addr == MEMORY_ADDRESSES['max_hp']:
                     return 0
-                elif addr == MEMORY_ADDRESSES['max_hp_low']:
+                elif addr == MEMORY_ADDRESSES['max_hp'] + 1:
                     return 60
-                elif addr == MEMORY_ADDRESSES['max_hp_high']:
-                    return 0
                 elif addr == MEMORY_ADDRESSES['badges']:
                     return 3
                 elif addr == MEMORY_ADDRESSES['party_count']:

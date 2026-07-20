@@ -180,10 +180,10 @@ class TestValidation:
             0xD362: 9,    # player_x
             0xD361: 4,    # player_y
             0xD18C: 0,    # level (no Pokemon yet)
-            0xD16C: 0,    # current_hp_low
-            0xD16D: 0,    # current_hp_high
-            0xD16E: 0,    # max_hp_low
-            0xD16F: 0,    # max_hp_high
+            0xD16C: 0,    # current HP high byte (big-endian)
+            0xD16D: 0,    # current HP low byte
+            0xD16E: 0,    # box level
+            0xD16F: 0,    # status
             0xD356: 0,    # badges = 0
             0xD163: 0,    # party_count = 0
         }.get(addr, 0)
@@ -204,10 +204,10 @@ class TestValidation:
             0xD362: 5,
             0xD361: 3,
             0xD18C: 5,
-            0xD16C: 20,
-            0xD16D: 0,
-            0xD16E: 20,
-            0xD16F: 0,
+            0xD16C: 0,    # current HP = 20 (big-endian)
+            0xD16D: 20,
+            0xD16E: 5,    # box level
+            0xD16F: 0,    # status
             0xD356: 0,
             0xD163: 0,
         }.get(addr, 0)

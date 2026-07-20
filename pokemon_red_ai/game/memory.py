@@ -17,12 +17,13 @@ MEMORY_ADDRESSES = {
     'player_y': 0xD361,  # Player Y coordinate (0-255)
     'map_id': 0xD35E,  # Current map ID (0 = not in game, >0 = in game)
 
-    # Player stats
-    'player_level': 0xD18C,  # Current Pokemon level
-    'current_hp_low': 0xD16C,  # Current HP low byte
-    'current_hp_high': 0xD16D,  # Current HP high byte
-    'max_hp_low': 0xD16E,  # Max HP low byte
-    'max_hp_high': 0xD16F,  # Max HP high byte
+    # Player stats (first party Pokemon; addresses from the pret/pokered
+    # disassembly symbols).  Gen 1 stores multi-byte stat values BIG-endian
+    # (high byte first) — read them with read_16bit_big_endian, never with
+    # read_memory_value(is_16bit=True).
+    'player_level': 0xD18C,  # wPartyMon1Level
+    'current_hp': 0xD16C,  # wPartyMon1HP (2 bytes, big-endian)
+    'max_hp': 0xD18D,  # wPartyMon1MaxHP (2 bytes, big-endian)
     'badges': 0xD356,  # Badge bitfield (each bit = gym badge)
 
     # Game state indicators
@@ -126,6 +127,31 @@ def read_memory_value(memory, address: int, is_16bit: bool = False) -> int:
         return 0
 
 
+def read_16bit_big_endian(memory, address: int) -> int:
+    """
+    Safely read a 16-bit big-endian value from Game Boy memory.
+
+    Gen 1 stores multi-byte stat values (current HP, max HP, attack, ...)
+    high byte first, unlike the CPU's little-endian pointer convention.
+    Verified against the pret/pokered disassembly and a live PyBoy
+    session: bytes 00 14 at wPartyMon1HP render in-game as 20 HP.
+
+    Args:
+        memory: PyBoy memory object
+        address: Memory address of the high byte
+
+    Returns:
+        Memory value at address, or 0 if read fails
+    """
+    try:
+        high = memory[address]
+        low = memory[address + 1]
+        return (high << 8) | low
+    except Exception as e:
+        logger.warning(f"Failed to read memory at 0x{address:04X}: {e}")
+        return 0
+
+
 def read_player_position(memory) -> Dict[str, int]:
     """
     Read current player position and map information.
@@ -153,8 +179,8 @@ def read_player_stats(memory) -> Dict[str, int]:
     Returns:
         Dictionary with player stats
     """
-    current_hp = read_memory_value(memory, MEMORY_ADDRESSES['current_hp_low'], is_16bit=True)
-    max_hp = read_memory_value(memory, MEMORY_ADDRESSES['max_hp_low'], is_16bit=True)
+    current_hp = read_16bit_big_endian(memory, MEMORY_ADDRESSES['current_hp'])
+    max_hp = read_16bit_big_endian(memory, MEMORY_ADDRESSES['max_hp'])
 
     return {
         'level': read_memory_value(memory, MEMORY_ADDRESSES['player_level']),
