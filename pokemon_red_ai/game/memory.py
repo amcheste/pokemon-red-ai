@@ -42,9 +42,9 @@ MEMORY_ADDRESSES = {
     'event_flags_start': 0xD747,  # wEventFlags: 320-byte bit-array
 
     # Additional useful addresses
-    'money_low': 0xD347,  # Money low byte
-    'money_mid': 0xD348,  # Money middle byte
-    'money_high': 0xD349,  # Money high byte
+    'money': 0xD347,  # wPlayerMoney: 3 bytes, big-endian BCD (0xD347 is the
+                      # MOST-significant byte) — decode with read_money, never
+                      # as a little-endian binary integer
     'items_count': 0xD31D,  # Number of items in bag
     'pc_items_count': 0xD53A,  # Number of items in PC
 }
@@ -287,19 +287,35 @@ def read_game_state(memory) -> Dict[str, int]:
 
 def read_money(memory) -> int:
     """
-    Read player's current money (24-bit value).
+    Read player's current money (0-999999).
+
+    Gen 1 stores money at wPlayerMoney (0xD347) as 3 bytes of big-endian
+    binary-coded decimal, most-significant byte first — each nibble is one
+    decimal digit, not a binary integer.  Verified against the pret/pokered
+    disassembly and a live PyBoy session: the starting ₽3000 is the bytes
+    00 30 00 (the old little-endian binary decode read that as 12288).
 
     Args:
         memory: PyBoy memory object
 
     Returns:
-        Current money amount
+        Current money amount, or 0 if any byte is not valid BCD
+        (a nibble > 9, e.g. from a failed memory read)
     """
-    low = read_memory_value(memory, MEMORY_ADDRESSES['money_low'])
-    mid = read_memory_value(memory, MEMORY_ADDRESSES['money_mid'])
-    high = read_memory_value(memory, MEMORY_ADDRESSES['money_high'])
+    money = 0
+    for offset in range(3):
+        byte = read_memory_value(memory, MEMORY_ADDRESSES['money'] + offset)
+        high_nibble = (byte >> 4) & 0x0F
+        low_nibble = byte & 0x0F
+        if high_nibble > 9 or low_nibble > 9:
+            logger.warning(
+                f"Non-BCD byte 0x{byte:02X} at wPlayerMoney+{offset} "
+                f"(0x{MEMORY_ADDRESSES['money'] + offset:04X})"
+            )
+            return 0
+        money = money * 100 + high_nibble * 10 + low_nibble
 
-    return low | (mid << 8) | (high << 16)
+    return money
 
 
 def get_badge_count(badges_value: int) -> int:
