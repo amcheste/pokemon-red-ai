@@ -661,13 +661,177 @@ class EventProgressRewardCalculator(BaseRewardCalculator):
         }
 
 
+@dataclass
+class PleinesRewardConfig:
+    """Configuration for the Pleines et al. (2025) baseline reward.
+
+    Defaults reproduce the exact scalars from arXiv:2502.19920 §II-F.
+    Change them only for explicitly-labeled ablations — the point of
+    this calculator is comparability with the published baseline.
+    """
+    event_reward: float = 2.0            # R_event per newly set flag
+    navigation_reward: float = 0.005     # R_nav per new coordinate/episode
+    heal_reward_coefficient: float = 2.5  # R_heal scale (Eq. 1)
+    level_potential_scale: float = 0.5   # R_lvl outer scale (Eq. 2)
+    level_sum_threshold: float = 22.0    # Eq. 2 downscale knee
+    level_downscale_divisor: float = 4.0  # Eq. 2 marginal-gain divisor
+
+
+class PleinesRewardCalculator(BaseRewardCalculator):
+    """Faithful reproduction of the Pleines et al. (2025) reward.
+
+    Implements the four dense reward components from
+    "Pokemon Red via Reinforcement Learning" (arXiv:2502.19920, §II-F),
+    summed per step: ``R = R_event + R_nav + R_heal + R_lvl``.
+
+    1. **Event** — +2 for every newly set flag in the game's 320-byte
+       ``wEventFlags`` array (trainer battles, NPC interactions,
+       storyline progression).  Requires ``'event_flag_count'`` in
+       ``current_state``.
+    2. **Navigation** — +0.005 for each new (x, y, map) coordinate
+       visited within the episode.
+    3. **Healing** — when party HP is gained (level-up, Pokemon Center,
+       potion, respawn):  ``2.5 * sum_i (HP_after - HP_before) / HP_max``
+       (Eq. 1).  Skipped when the party size changes, so catching a
+       full-HP Pokemon does not fire a false heal.
+    4. **Level** — positive delta of the potential
+       ``0.5 * min(sum_lvl, (sum_lvl - 22) / 4 + 22)`` (Eq. 2):
+       0.5/level below a party-level-sum of 22, downscaled 4x above it.
+
+    Components 3 and 4 require ``'party'`` in ``current_state`` (a list
+    of per-Pokemon dicts from ``memory.read_party_data``).  Missing
+    keys degrade gracefully with a one-time warning, matching the
+    ``EventProgressRewardCalculator`` behavior.
+
+    **Deliberately preserved exploits** (documented in the paper §IV-B):
+    heal-reward farming (Leech Seed / Pokemon Center respawn loops),
+    navigation-dominance, level grinding, badge skipping, and
+    starter-selection time bias.  Do NOT patch these here — the paper
+    baseline is reproduced warts-and-all for comparability, and the
+    reward-component breakdown exposes them for analysis.
+
+    Note: the paper's dynamic episode budget (10,240 steps + 2,048 per
+    completed event) is a termination rule, not a reward, and is not
+    implemented by this calculator.
+    """
+
+    def __init__(self, config: Optional['PleinesRewardConfig'] = None,
+                 base_config: Optional[RewardConfig] = None):
+        super().__init__(base_config)
+        self.pleines_config = config or PleinesRewardConfig()
+        self._prev_event_count: Optional[int] = None
+        self._prev_party: Optional[List[Dict[str, int]]] = None
+        self._prev_level_potential: Optional[float] = None
+        self._warned_missing_events = False
+        self._warned_missing_party = False
+
+    def reset(self) -> None:
+        """Reset calculator state for a new episode."""
+        super().reset()
+        self._prev_event_count = None
+        self._prev_party = None
+        self._prev_level_potential = None
+        self._warned_missing_events = False
+        self._warned_missing_party = False
+
+    def _level_potential(self, level_sum: float) -> float:
+        """Eq. 2 of the paper: capped party-level-sum potential."""
+        c = self.pleines_config
+        downscaled = ((level_sum - c.level_sum_threshold)
+                      / c.level_downscale_divisor + c.level_sum_threshold)
+        return c.level_potential_scale * min(level_sum, downscaled)
+
+    def calculate_reward(self, current_state: Dict[str, Any]) -> float:
+        """Calculate the summed Pleines reward for the current step."""
+        reward = 0.0
+        self.reward_components.clear()
+
+        position = current_state['position']
+        cfg = self.pleines_config
+
+        # ---- 1. Event reward: +2 per newly set wEventFlags bit ----
+        event_count = current_state.get('event_flag_count')
+        if event_count is not None:
+            if (self._prev_event_count is not None
+                    and event_count > self._prev_event_count):
+                event_reward = ((event_count - self._prev_event_count)
+                                * cfg.event_reward)
+                reward += event_reward
+                self.reward_components['event'] = event_reward
+            self._prev_event_count = event_count
+        elif not self._warned_missing_events:
+            logger.warning(
+                "PleinesRewardCalculator: 'event_flag_count' missing from "
+                "current_state. Event rewards will not fire. Make sure the "
+                "environment state comes from memory.get_comprehensive_state()."
+            )
+            self._warned_missing_events = True
+
+        # ---- 2. Navigation reward: new coordinate this episode ----
+        location_key = (position['x'], position['y'], position['map'])
+        if location_key not in self.visited_locations:
+            self.visited_locations.add(location_key)
+            reward += cfg.navigation_reward
+            self.reward_components['navigation'] = cfg.navigation_reward
+
+        # ---- 3 + 4. Healing and level rewards from party data ----
+        party = current_state.get('party')
+        if party is not None:
+            # Healing (Eq. 1): fires only while party composition is
+            # stable, so a newly caught full-HP Pokemon is not a "heal".
+            # A slot with max_hp == 0 is an uninitialized party_struct
+            # (the game bumps party_count before filling the struct
+            # during capture) and is excluded on either side.
+            if (self._prev_party is not None
+                    and len(party) == len(self._prev_party)):
+                hp_gain_fraction = sum(
+                    (cur['current_hp'] - prev['current_hp']) / cur['max_hp']
+                    for cur, prev in zip(party, self._prev_party)
+                    if cur['max_hp'] > 0 and prev['max_hp'] > 0
+                )
+                if hp_gain_fraction > 0:
+                    heal_reward = cfg.heal_reward_coefficient * hp_gain_fraction
+                    reward += heal_reward
+                    self.reward_components['healing'] = heal_reward
+
+            # Level (Eq. 2): positive potential delta only, so
+            # depositing a Pokemon does not punish the agent.
+            # Uninitialized slots (max_hp == 0) are excluded here too.
+            level_potential = self._level_potential(
+                sum(mon['level'] for mon in party if mon['max_hp'] > 0)
+            )
+            if self._prev_level_potential is not None:
+                level_delta = level_potential - self._prev_level_potential
+                if level_delta > 0:
+                    reward += level_delta
+                    self.reward_components['level'] = level_delta
+            self._prev_level_potential = level_potential
+            self._prev_party = [mon.copy() for mon in party]
+        elif not self._warned_missing_party:
+            logger.warning(
+                "PleinesRewardCalculator: 'party' missing from "
+                "current_state. Healing and level rewards will not fire. "
+                "Make sure the environment state comes from "
+                "memory.get_comprehensive_state()."
+            )
+            self._warned_missing_party = True
+
+        self.previous_state = {
+            'position': position.copy(),
+            'stats': current_state['stats'].copy(),
+        }
+
+        return reward
+
+
 def create_reward_calculator(strategy: str = "standard",
                              config: RewardConfig = None) -> BaseRewardCalculator:
     """
     Factory function to create reward calculators.
 
     Args:
-        strategy: Reward strategy ('standard', 'exploration', 'progress', 'sparse')
+        strategy: Reward strategy ('standard', 'exploration', 'progress',
+            'sparse', 'events', 'pleines')
         config: Optional reward configuration
 
     Returns:
@@ -679,6 +843,7 @@ def create_reward_calculator(strategy: str = "standard",
         'progress': ProgressFocusedCalculator,
         'sparse': SparseRewardCalculator,
         'events': EventProgressRewardCalculator,
+        'pleines': PleinesRewardCalculator,
     }
 
     if strategy not in calculators:

@@ -51,7 +51,10 @@ class PokemonRedGymEnv(gym.Env):
                  reward_config: Optional[RewardConfig] = None,
                  screen_size: Tuple[int, int] = (80, 72),
                  observation_type: str = "multi_modal",
-                 save_state_path: Optional[str] = None):
+                 save_state_path: Optional[str] = None,
+                 dynamic_episode_budget: bool = False,
+                 dynamic_budget_initial: int = 10_240,
+                 dynamic_budget_per_event: int = 2_048):
         """
         Initialize Pokemon Red Gymnasium environment.
 
@@ -66,6 +69,16 @@ class PokemonRedGymEnv(gym.Env):
             save_state_path: Optional path to a PyBoy ``.state`` file.
                 If provided, ``reset()`` loads this state instead of
                 replaying the intro sequence (much faster).
+            dynamic_episode_budget: If True, replace the fixed
+                ``max_episode_steps`` truncation with the Pleines et al.
+                (2025) dynamic budget: episodes start with
+                ``dynamic_budget_initial`` steps and gain
+                ``dynamic_budget_per_event`` steps for each event flag
+                set since reset.  Desynchronizes parallel-env resets and
+                mitigates catastrophic forgetting (paper §II-E).
+            dynamic_budget_initial: Starting step budget (paper: 10,240).
+            dynamic_budget_per_event: Extra steps per completed event
+                (paper: 2,048).
         """
         super().__init__()
 
@@ -75,6 +88,10 @@ class PokemonRedGymEnv(gym.Env):
         self.screen_size = screen_size
         self.observation_type = observation_type
         self.save_state_path = save_state_path
+        self.dynamic_episode_budget = dynamic_episode_budget
+        self.dynamic_budget_initial = dynamic_budget_initial
+        self.dynamic_budget_per_event = dynamic_budget_per_event
+        self._episode_event_baseline = 0
 
         # Initialize game game
         self.game = PokemonRedAgent(
@@ -218,13 +235,29 @@ class PokemonRedGymEnv(gym.Env):
         Returns:
             (terminated, truncated) - terminated for natural end, truncated for timeout
         """
-        # Check for maximum steps (truncation)
-        if self.episode_steps >= self.max_episode_steps:
+        game_state = self.game.get_comprehensive_state()
+
+        # Check for maximum steps (truncation).  With the dynamic
+        # budget (Pleines et al. 2025 §II-E) the cap grows with each
+        # event flag set since reset instead of being fixed.
+        if self.dynamic_episode_budget:
+            events_completed = max(
+                0,
+                game_state.get('event_flag_count', 0)
+                - self._episode_event_baseline,
+            )
+            step_budget = (self.dynamic_budget_initial
+                           + self.dynamic_budget_per_event * events_completed)
+            if self.episode_steps >= step_budget:
+                logger.debug(
+                    f"Episode truncated: dynamic budget exhausted "
+                    f"({step_budget} steps, {events_completed} events)")
+                return False, True
+        elif self.episode_steps >= self.max_episode_steps:
             logger.debug(f"Episode truncated: Max steps reached ({self.max_episode_steps})")
             return False, True
 
         # More lenient termination conditions
-        game_state = self.game.get_comprehensive_state()
 
         # Only terminate if Pokemon has been unconscious for too long
         if (game_state['stats']['current_hp'] == 0 and
@@ -414,6 +447,18 @@ class PokemonRedGymEnv(gym.Env):
         # Wait for game to stabilize
         logger.debug("Waiting for game to stabilize...")
         self.game.wait_frames(60)
+
+        # Baseline for the dynamic episode budget: only flags set AFTER
+        # reset extend the episode (a save state starts with some set).
+        if self.dynamic_episode_budget:
+            try:
+                self._episode_event_baseline = (
+                    self.game.get_comprehensive_state()
+                    .get('event_flag_count', 0)
+                )
+            except Exception as e:
+                logger.warning(f"Failed to read event-flag baseline: {e}")
+                self._episode_event_baseline = 0
 
         # Get initial observation
         try:

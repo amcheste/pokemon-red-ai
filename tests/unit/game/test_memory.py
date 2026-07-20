@@ -548,3 +548,132 @@ class TestErrorResilience:
         assert state['position']['x'] == 5  # This should work
         assert state['stats']['level'] == 0  # This should default to 0
         assert 'in_game' in state  # Should still have all expected keys
+
+class TestReadPartyData:
+    """Test per-Pokemon party struct reading (pret/pokered layout)."""
+
+    @staticmethod
+    def _memory_with_party(mons):
+        """Build a mock memory holding `mons` party_structs.
+
+        Each entry is (level, current_hp, max_hp).  HP values are
+        written BIG-endian, as Gen 1 stores them.
+        """
+        from pokemon_red_ai.game.memory import (
+            PARTY_MON_SIZE,
+            PARTY_MON_HP_OFFSET,
+            PARTY_MON_LEVEL_OFFSET,
+            PARTY_MON_MAX_HP_OFFSET,
+        )
+        memory_map = {MEMORY_ADDRESSES['party_count']: len(mons)}
+        base = MEMORY_ADDRESSES['party_data_start']
+        for i, (level, current_hp, max_hp) in enumerate(mons):
+            mon = base + i * PARTY_MON_SIZE
+            memory_map[mon + PARTY_MON_HP_OFFSET] = (current_hp >> 8) & 0xFF
+            memory_map[mon + PARTY_MON_HP_OFFSET + 1] = current_hp & 0xFF
+            memory_map[mon + PARTY_MON_LEVEL_OFFSET] = level
+            memory_map[mon + PARTY_MON_MAX_HP_OFFSET] = (max_hp >> 8) & 0xFF
+            memory_map[mon + PARTY_MON_MAX_HP_OFFSET + 1] = max_hp & 0xFF
+
+        mock_memory = Mock()
+        mock_memory.__getitem__ = Mock(
+            side_effect=lambda addr: memory_map.get(addr, 0)
+        )
+        return mock_memory
+
+    def test_empty_party(self):
+        from pokemon_red_ai.game.memory import read_party_data
+        assert read_party_data(self._memory_with_party([])) == []
+
+    def test_single_pokemon_big_endian_hp(self):
+        from pokemon_red_ai.game.memory import read_party_data
+        party = read_party_data(self._memory_with_party([(5, 19, 20)]))
+        assert party == [{'level': 5, 'current_hp': 19, 'max_hp': 20}]
+
+    def test_hp_above_255_decodes_correctly(self):
+        from pokemon_red_ai.game.memory import read_party_data
+        # 300 = 0x012C: high byte 0x01 first (big-endian)
+        party = read_party_data(self._memory_with_party([(80, 300, 312)]))
+        assert party[0]['current_hp'] == 300
+        assert party[0]['max_hp'] == 312
+
+    def test_full_party_in_order(self):
+        from pokemon_red_ai.game.memory import read_party_data
+        mons = [(5 + i, 10 + i, 20 + i) for i in range(6)]
+        party = read_party_data(self._memory_with_party(mons))
+        assert len(party) == 6
+        assert [m['level'] for m in party] == [5, 6, 7, 8, 9, 10]
+
+    def test_party_count_clamped_to_six(self):
+        from pokemon_red_ai.game.memory import read_party_data
+        mock_memory = self._memory_with_party([(5, 10, 10)])
+        # Corrupt count byte claims 99 party members
+        original = mock_memory.__getitem__.side_effect
+        count_addr = MEMORY_ADDRESSES['party_count']
+        mock_memory.__getitem__.side_effect = (
+            lambda addr: 99 if addr == count_addr else original(addr)
+        )
+        assert len(read_party_data(mock_memory)) == 6
+
+
+class TestReadEventFlagCount:
+    """Test wEventFlags popcount reading."""
+
+    @staticmethod
+    def _memory_with_flag_bytes(byte_map):
+        """Mock memory with specific bytes in the wEventFlags array."""
+        base = MEMORY_ADDRESSES['event_flags_start']
+        memory_map = {base + offset: value
+                      for offset, value in byte_map.items()}
+        mock_memory = Mock()
+        mock_memory.__getitem__ = Mock(
+            side_effect=lambda addr: memory_map.get(addr, 0)
+        )
+        return mock_memory
+
+    def test_no_flags_set(self):
+        from pokemon_red_ai.game.memory import read_event_flag_count
+        assert read_event_flag_count(self._memory_with_flag_bytes({})) == 0
+
+    def test_counts_bits_across_array(self):
+        from pokemon_red_ai.game.memory import read_event_flag_count
+        memory = self._memory_with_flag_bytes({
+            0: 0b10110000,    # 3 bits
+            100: 0xFF,        # 8 bits
+            319: 0b00000001,  # last byte in range
+        })
+        assert read_event_flag_count(memory) == 12
+
+    def test_bytes_outside_array_ignored(self):
+        from pokemon_red_ai.game.memory import read_event_flag_count
+        from pokemon_red_ai.game.memory import EVENT_FLAGS_SIZE
+        memory = self._memory_with_flag_bytes({EVENT_FLAGS_SIZE: 0xFF})
+        assert read_event_flag_count(memory) == 0
+
+    def test_slice_read_supported(self):
+        from pokemon_red_ai.game.memory import (
+            read_event_flag_count, EVENT_FLAGS_SIZE,
+        )
+
+        class SliceMemory:
+            """Fake memory supporting slice reads like PyBoy."""
+            def __getitem__(self, key):
+                if isinstance(key, slice):
+                    block = [0] * EVENT_FLAGS_SIZE
+                    block[0] = 0b00000111  # 3 bits
+                    return block
+                raise TypeError("only slices supported")
+
+        assert read_event_flag_count(SliceMemory()) == 3
+
+
+class TestComprehensiveStatePartyFields:
+    """Test that get_comprehensive_state exposes the new fields."""
+
+    def test_party_and_event_flag_count_present(self, mock_memory_from_state):
+        mock_memory = mock_memory_from_state()
+        state = get_comprehensive_state(mock_memory)
+        assert 'party' in state
+        assert isinstance(state['party'], list)
+        assert 'event_flag_count' in state
+        assert isinstance(state['event_flag_count'], int)

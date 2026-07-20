@@ -243,6 +243,7 @@ def _fake_args(tmp_path, **overrides):
         observation_type="pixel",
         save_dir=str(tmp_path),
         show_game=False,
+        dynamic_episode_budget=False,
     )
     for k, v in overrides.items():
         setattr(args, k, v)
