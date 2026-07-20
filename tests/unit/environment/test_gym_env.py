@@ -413,6 +413,34 @@ class TestPokemonRedGymEnvInfo:
         assert 'total_episodes' in info
         assert 'successful_resets' in info
 
+    @pytest.mark.parametrize(
+        "strategy", ["standard", "exploration", "progress", "sparse",
+                     "events", "pleines"]
+    )
+    def test_info_satisfies_monitor_contract(
+        self, mock_agent_class, mock_rom_file, strategy
+    ):
+        """Every reward strategy must populate every MONITORED_INFO_KEYS key.
+
+        scripts/train.py wraps the env in Monitor(info_keywords=
+        MONITORED_INFO_KEYS), which raises KeyError at episode end for
+        any missing key.  'event_progress' used to be set only by the
+        events strategy — under pleines this crashed training at the
+        first episode boundary.
+        """
+        from pokemon_red_ai.training.callbacks import MONITORED_INFO_KEYS
+
+        env = PokemonRedGymEnv(str(mock_rom_file), reward_strategy=strategy)
+        env.reset()
+
+        _, _, _, _, info = env.step(0)
+
+        missing = [key for key in MONITORED_INFO_KEYS if key not in info]
+        assert missing == [], (
+            f"reward_strategy={strategy!r} is missing info keys {missing} "
+            f"required by Monitor(info_keywords=MONITORED_INFO_KEYS)"
+        )
+
 
 class TestPokemonRedGymEnvContextManager:
     """Test environment as context manager."""

@@ -335,9 +335,15 @@ class PokemonRedGymEnv(gym.Env):
             'battle_state': game_state.get('battle_state', 0),
         }
 
-        # Add event flag progress if the reward calculator supports it
+        # Event flag progress when the reward calculator supports it.
+        # Always present (empty dict otherwise): Monitor(info_keywords=
+        # MONITORED_INFO_KEYS) raises KeyError at episode end for any
+        # missing key, which would crash training under every reward
+        # strategy without get_event_progress (pleines, standard, ...).
         if hasattr(self.reward_calculator, 'get_event_progress'):
             info['event_progress'] = self.reward_calculator.get_event_progress()
+        else:
+            info['event_progress'] = {}
 
         return info
 

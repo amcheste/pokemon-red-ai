@@ -1468,3 +1468,222 @@ class MonitoringCallback(WandbCallback):
             os.replace(tmp_path, self.dashboard_state_path)
         except Exception as exc:
             logger.debug(f"Dashboard state write failed: {exc}")
+
+# ──────────────────────────────────────────────────────────────────────
+# Per-step reward-component tracing (AMC-233)
+# ──────────────────────────────────────────────────────────────────────
+
+REWARD_TRACE_FORMAT = "reward-trace-v1"
+
+
+class RewardComponentTraceCallback(BaseCallback):
+    """Persist per-step reward-component firings to a gzip NDJSON trace.
+
+    The paper's reward-hacking analysis (defense against "symbolic
+    advantage = faster reward gaming") requires reward-component firing
+    logged **per seed, per step** across all conditions.  The
+    :class:`MonitoringCallback` accumulates components per episode,
+    which cannot be disaggregated after the fact — this callback writes
+    the raw per-step trace to disk during the run.
+
+    Format — one JSON object per line, gzip-compressed:
+
+    * First line: header record ``{"format": "reward-trace-v1", ...}``
+      describing the encoding.
+    * Data records: ``{"t": <global_step>, "s": <per-env step>,
+      "env": <env index>, "ep": <per-env episode>, "c": {<component>:
+      <value>, ...}}``.  A record is written only when at least one
+      component fired that step (sparse encoding — an absent (env, s)
+      pair means no component fired).  Episode ends always produce a
+      record with ``"done": 1`` even when no component fired, so
+      episode boundaries are recoverable from the trace alone.
+
+    Sizing: under the Pleines reward most steps fire nothing, so a 10M
+    step run compresses to tens of MB.  Under strategies with a
+    per-step time penalty every step produces a record; gzip keeps even
+    that tractable.
+
+    Crash-safety: each flush is appended as a complete gzip member
+    (concatenated members decompress as one stream), so a run killed
+    mid-flight loses at most the un-flushed buffer — everything already
+    on disk stays readable.  ``iter_reward_trace`` additionally
+    tolerates a truncated final member.
+
+    All I/O failures disable the trace with a single warning — they
+    never interrupt training.
+    """
+
+    def __init__(
+        self,
+        trace_path: str,
+        flush_every: int = 5_000,
+        verbose: int = 0,
+    ):
+        """
+        Args:
+            trace_path: Output path for the gzip NDJSON trace.  Parent
+                directories are created on training start.
+            flush_every: Buffered records between appends to the
+                compressed file.
+            verbose: 0 silent, 1 info.
+        """
+        super().__init__(verbose)
+        self.trace_path = trace_path
+        self.flush_every = max(1, int(flush_every))
+        self._buffer: List[str] = []
+        self._env_steps: Dict[int, int] = defaultdict(int)
+        self._env_episodes: Dict[int, int] = defaultdict(int)
+        self._disabled = False
+        self._started = False
+
+    # ------------------------------------------------------------------
+    # SB3 callback interface
+    # ------------------------------------------------------------------
+
+    def _on_training_start(self) -> None:
+        if self._disabled or self._started:
+            return
+        try:
+            os.makedirs(
+                os.path.dirname(os.path.abspath(self.trace_path)),
+                exist_ok=True,
+            )
+            header = {
+                "format": REWARD_TRACE_FORMAT,
+                "sparse": True,
+                "note": (
+                    "One record per (env, step) where at least one reward "
+                    "component fired; absent steps fired nothing.  Episode "
+                    "ends always emit a record with done=1.  Fields: "
+                    "t=global timesteps, s=per-env step, env=env index, "
+                    "ep=per-env episode index (0-based), c=component dict."
+                ),
+                "n_envs": int(getattr(self.training_env, "num_envs", 1) or 1),
+            }
+            # Truncate any stale file, then write the header as the
+            # first gzip member.
+            self._write_member([json.dumps(header)], mode="wt")
+            self._started = True
+            if self.verbose >= 1:
+                logger.info(f"Reward trace: writing to {self.trace_path}")
+        except Exception as exc:
+            self._disable(f"open failed: {exc}")
+
+    def _on_step(self) -> bool:
+        if self._disabled:
+            return True
+
+        dones = self.locals.get("dones")
+        infos = self.locals.get("infos")
+        if dones is None or infos is None:
+            return True
+
+        for env_idx, (done, info) in enumerate(zip(dones, infos)):
+            components = info.get("reward_components")
+            if not isinstance(components, dict):
+                components = {}
+
+            clean: Dict[str, float] = {}
+            for key, val in components.items():
+                try:
+                    clean[str(key)] = float(val)
+                except (TypeError, ValueError):
+                    continue
+
+            if clean or done:
+                record: Dict[str, Any] = {
+                    "t": int(self.num_timesteps),
+                    "s": self._env_steps[env_idx],
+                    "env": env_idx,
+                    "ep": self._env_episodes[env_idx],
+                }
+                if clean:
+                    record["c"] = clean
+                if done:
+                    record["done"] = 1
+                self._buffer.append(json.dumps(record))
+
+            self._env_steps[env_idx] += 1
+            if done:
+                self._env_episodes[env_idx] += 1
+
+        if len(self._buffer) >= self.flush_every:
+            self._flush()
+        return True
+
+    def _on_rollout_end(self) -> None:
+        self._flush()
+
+    def _on_training_end(self) -> None:
+        self._flush()
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _write_member(self, lines: List[str], mode: str = "at") -> None:
+        """Write lines as one complete gzip member (append by default)."""
+        import gzip
+
+        with gzip.open(self.trace_path, mode, encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+
+    def _flush(self) -> None:
+        if self._disabled or not self._started:
+            self._buffer = []
+            return
+        if not self._buffer:
+            return
+        try:
+            self._write_member(self._buffer)
+            self._buffer = []
+        except Exception as exc:
+            self._disable(f"write failed: {exc}")
+
+    def _disable(self, reason: str) -> None:
+        logger.warning(
+            f"Reward trace disabled ({reason}) — training continues "
+            f"WITHOUT per-step reward-component logging."
+        )
+        self._disabled = True
+        self._buffer = []
+
+
+def iter_reward_trace(trace_path: str):
+    """Yield (header, records) parsed from a reward-trace file.
+
+    Small analysis-side helper: returns the header dict and a generator
+    over data records so 10M-step traces can be streamed without
+    loading them into memory.  A truncated final gzip member (run
+    killed mid-write) ends the stream with a warning instead of
+    raising, so a crashed run's trace remains usable up to its last
+    complete flush.
+
+    Usage::
+
+        header, records = iter_reward_trace("runs/.../reward_trace.ndjson.gz")
+        for rec in records:
+            ...
+    """
+    import gzip
+    import zlib
+
+    fh = gzip.open(trace_path, "rt", encoding="utf-8")
+    header_line = fh.readline()
+    header = json.loads(header_line) if header_line.strip() else {}
+
+    def _records():
+        with fh:
+            try:
+                for line in fh:
+                    line = line.strip()
+                    if line:
+                        yield json.loads(line)
+            except (EOFError, OSError, zlib.error):
+                logger.warning(
+                    f"Reward trace {trace_path} ends in a truncated gzip "
+                    f"member (crashed run?) — stopping at the last "
+                    f"complete flush."
+                )
+
+    return header, _records()
