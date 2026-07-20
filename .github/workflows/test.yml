@@ -33,7 +33,7 @@ jobs:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install SDL2 system libraries
         # PyBoy imports SDL2 at module level even when running headless.
@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install SDL2 system libraries
         # The script imports pokemon_red_ai.game.event_flags, whose
