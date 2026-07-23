@@ -488,6 +488,28 @@ class PokemonRedGymEnv(gym.Env):
 
         return observation, info
 
+    def get_screen_rgb(self) -> Optional[np.ndarray]:
+        """Return the current game screen as an (H, W, 3) uint8 array.
+
+        Screen-capture entry point for monitoring callbacks.  Two hard
+        requirements, both learned from the 2026-07-23 grid outage
+        (AMC-254):
+
+        * **Zero-arg**, so it can be invoked via ``VecEnv.env_method``
+          through wrapper ``__getattr__`` forwarding.  Calling
+          ``render("rgb_array")`` that way hits gymnasium's
+          ``Wrapper.render()``, which takes no positional args — the
+          TypeError is raised *inside* the SubprocVecEnv worker and
+          kills it, taking the whole training run down.
+        * **Never raises**: an exception inside ``env_method`` also
+          kills the worker, so any failure returns None instead.
+        """
+        try:
+            return self.game.get_screen_array()
+        except Exception as e:
+            logger.debug(f"get_screen_rgb failed: {e}")
+            return None
+
     def render(self, mode: str = 'human') -> Optional[np.ndarray]:
         """Render the environment."""
         if mode == 'rgb_array':

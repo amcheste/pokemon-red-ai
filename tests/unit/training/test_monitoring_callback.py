@@ -224,6 +224,25 @@ class TestScreenCapture:
         assert len(image_logs) == 1
         mock_wandb.Image.assert_called()
 
+    def test_capture_uses_safe_zero_arg_method(self, monitoring_cb):
+        """Screen capture must call get_screen_rgb, never render(mode).
+
+        Regression for the 2026-07-23 grid outage (AMC-254): calling
+        render with a positional mode arg via env_method hits gymnasium
+        Wrapper.render() (zero-arg) inside the SubprocVecEnv worker;
+        the TypeError kills the worker and the training run with it.
+        """
+        monitoring_cb._get_env_screen()
+
+        fake_env = monitoring_cb.model.get_env()
+        assert fake_env.env_method.call_args_list, "env_method not called"
+        for call in fake_env.env_method.call_args_list:
+            assert call.args[0] == "get_screen_rgb"
+            assert len(call.args) == 1, (
+                f"env_method{call.args} passes positional args through the "
+                f"wrapper chain — this is the AMC-254 crash shape"
+            )
+
     def test_disable_with_zero_freq(self, tmp_path, mock_wandb):
         with patch.dict("sys.modules", {"wandb": mock_wandb}):
             cb = MonitoringCallback(
