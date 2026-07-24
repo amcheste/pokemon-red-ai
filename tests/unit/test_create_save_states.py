@@ -16,6 +16,7 @@ from scripts.create_save_states import (
     create_post_intro_state,
     SAVE_STATE_SPECS,
     REDS_HOUSE_2F,
+    OAKS_LAB,
 )
 
 
@@ -134,9 +135,14 @@ class TestSaveStateSpecs:
                 f"Spec {key} filename should end with .state"
             )
 
-    def test_post_intro_expects_player_bedroom(self):
+    def test_post_intro_expects_bedroom_or_oaks_lab(self):
         spec = SAVE_STATE_SPECS["s0_post_intro"]
-        assert spec["expected_map_id"] == REDS_HOUSE_2F  # Player's bedroom
+        # REDS_HOUSE_2F is 38 and OAKS_LAB is 40 per pret/pokered (the old
+        # hardcoded REDS_HOUSE_2F = 40 was actually Oak's Lab — confirmed
+        # live: the shipped s0_post_intro.state starts on map 40 in the lab).
+        assert REDS_HOUSE_2F == 38
+        assert OAKS_LAB == 40
+        assert spec["expected_map_id"] == (REDS_HOUSE_2F, OAKS_LAB)
         assert spec["expected_badges"] == 0
 
     def test_post_brock_expects_boulder_badge(self):
@@ -307,8 +313,9 @@ class TestCreatePostIntro:
     @patch("scripts.create_save_states.PokemonRedAgent")
     @patch("scripts.create_save_states.read_player_position")
     @patch("scripts.create_save_states.read_player_stats")
-    def test_fails_when_map_id_zero(
-        self, mock_stats, mock_pos, MockAgent, save_dir
+    @patch("scripts.create_save_states.is_in_game", return_value=False)
+    def test_fails_when_not_in_game(
+        self, mock_in_game, mock_stats, mock_pos, MockAgent, save_dir
     ):
         agent = MagicMock()
         MockAgent.return_value = agent

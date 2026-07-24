@@ -140,7 +140,11 @@ def process_game_state(agent, episode_steps: int, max_episode_steps: int,
     # Count unique maps from visited locations
     unique_maps = set()
     for x, y, map_id in visited_locations:
-        if map_id != 0:  # Exclude non-game states
+        # NOTE: map 0 is PALLET_TOWN (pret/pokered numbering); this filter
+        # (meant to exclude non-game states) also drops Pallet Town from
+        # the count.  Kept unchanged for baseline comparability — same
+        # applies to the two identical filters below.
+        if map_id != 0:
             unique_maps.add(map_id)
 
     # Badge count (count bits set in badge bitfield)

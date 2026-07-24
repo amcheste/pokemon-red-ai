@@ -10,9 +10,10 @@ wall-clock time.
 Automatically created save states
 ----------------------------------
 ``s0_post_intro.state``
-    Player is in their bedroom in Pallet Town, immediately after
-    Prof. Oak's intro and naming screens.  This is the standard
-    starting point for RL training.
+    Player has just gained control after Prof. Oak's intro and naming
+    screens — in their bedroom (map 38) when created by the automated
+    flow, or in Oak's Lab (map 40) for the shipped state.  This is the
+    standard starting point for RL training.
 
 Manual save states (via ``--interactive``)
 ------------------------------------------
@@ -52,6 +53,7 @@ from pokemon_red_ai.game.memory import (
     read_player_position,
     read_player_stats,
     read_memory_value,
+    is_in_game,
     MEMORY_ADDRESSES,
 )
 
@@ -62,15 +64,19 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────
 
 # Each entry defines the expected game state for validation.
-# Map 40 = Red's House 2F (player's bedroom) — this is the actual
-# starting map, not the Pallet Town overworld (map 1).
-REDS_HOUSE_2F = 40
+# The automated opening sequence leaves the player in Red's House 2F
+# (the bedroom, map 38 in the pret/pokered numbering); the shipped
+# s0_post_intro.state was saved slightly further in, standing in
+# Oak's Lab (map 40) before picking a starter.  Both are valid
+# post-intro starting points, so validation accepts either.
+REDS_HOUSE_2F = MAP_IDS["reds_house_2f"]
+OAKS_LAB = MAP_IDS["oaks_lab"]
 
 SAVE_STATE_SPECS = {
     "s0_post_intro": {
         "filename": "s0_post_intro.state",
-        "description": "Post-intro: Pallet Town, player's bedroom",
-        "expected_map_id": REDS_HOUSE_2F,
+        "description": "Post-intro: Pallet Town (bedroom or Oak's Lab)",
+        "expected_map_id": (REDS_HOUSE_2F, OAKS_LAB),
         "expected_badges": 0,
         "min_party_count": 0,  # No Pokemon yet
     },
@@ -146,13 +152,20 @@ def validate_save_state(
 
         passed = True
 
-        # Check map
+        # Check map (a spec may allow a single map ID or several)
         expected_map = spec.get("expected_map_id")
-        if expected_map is not None and pos["map"] != expected_map:
-            logger.error(
-                f"  FAIL map_id: expected {expected_map}, got {pos['map']}"
+        if expected_map is not None:
+            allowed = (
+                expected_map
+                if isinstance(expected_map, (tuple, list, set, frozenset))
+                else (expected_map,)
             )
-            passed = False
+            if pos["map"] not in allowed:
+                logger.error(
+                    f"  FAIL map_id: expected one of {tuple(allowed)}, "
+                    f"got {pos['map']}"
+                )
+                passed = False
 
         # Check badges
         expected_badges = spec.get("expected_badges", 0)
@@ -261,10 +274,10 @@ def create_post_intro_state(rom_path: str, save_dir: str) -> bool:
             f"Party: {stats['party_count']}"
         )
 
-        if pos["map"] == 0:
+        if not is_in_game(agent.memory):
             logger.error(
-                "map_id is 0 after opening sequence -- player is not in-game. "
-                "The intro may not have completed properly."
+                "Player name is unset after opening sequence -- player is "
+                "not in-game. The intro may not have completed properly."
             )
             return False
 

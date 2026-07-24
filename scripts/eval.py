@@ -102,7 +102,7 @@ LOCKED_N_EPISODES = 20
 LOCKED_SEED = 42
 
 # Game constants for milestone detection
-PEWTER_CITY_MAP_ID = MAP_IDS["pewter_city"]  # 3
+PEWTER_CITY_MAP_ID = MAP_IDS["pewter_city"]  # 2 (pret/pokered numbering)
 BOULDER_BADGE_BIT = BADGE_FLAGS["boulder"]    # 0x01
 
 
