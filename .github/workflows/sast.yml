@@ -18,4 +18,4 @@ permissions:
 
 jobs:
   semgrep:
-    uses: amcheste/gh-workflows/.github/workflows/reusable-sast.yml@v1.1.1
+    uses: amcheste/gh-workflows/.github/workflows/reusable-sast.yml@v1.1.3
