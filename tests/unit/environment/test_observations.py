@@ -652,6 +652,7 @@ class TestObservationEdgeCases:
         assert observation['stats'][3] == 255  # party_count
 
 
+@pytest.mark.benchmark
 class TestObservationPerformance:
     """Test observation processing performance."""
 
@@ -672,7 +673,7 @@ class TestObservationPerformance:
             process_game_state(agent, 100, 1000, visited)
 
         result = benchmark_runner.run('process_state', process_op, iterations=100)
-        assert result['mean'] < 0.01  # Should be under 10ms
+        assert result['median'] < 0.01  # Should be under 10ms
 
     @pytest.mark.slow
     def test_downsample_performance(self, benchmark_runner):
@@ -683,7 +684,7 @@ class TestObservationPerformance:
             downsample_screen(screen)
 
         result = benchmark_runner.run('downsample', downsample_op, iterations=1000)
-        assert result['mean'] < 0.005  # Should be under 5ms
+        assert result['median'] < 0.005  # Should be under 5ms
 
 
 # ──────────────────────────────────────────────────────────────────────

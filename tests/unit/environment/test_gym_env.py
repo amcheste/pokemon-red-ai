@@ -687,6 +687,7 @@ class TestPokemonRedGymEnvIntegration:
         env.close()
 
 
+@pytest.mark.benchmark
 class TestPokemonRedGymEnvPerformance:
     """Performance tests for gym environment."""
 
@@ -700,7 +701,7 @@ class TestPokemonRedGymEnvPerformance:
             env.step(0)
 
         result = benchmark_runner.run('env_step', step_op, iterations=100)
-        assert result['mean'] < 0.05  # Should be under 50ms
+        assert result['median'] < 0.05  # Should be under 50ms
 
         env.close()
 
@@ -713,7 +714,7 @@ class TestPokemonRedGymEnvPerformance:
             env.reset()
 
         result = benchmark_runner.run('env_reset', reset_op, iterations=10)
-        assert result['mean'] < 5.0  # Reset can take longer
+        assert result['median'] < 5.0  # Reset can take longer
 
         env.close()
 

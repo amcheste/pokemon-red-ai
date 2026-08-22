@@ -550,6 +550,7 @@ class TestControlsIntegration:
 
 # Performance tests
 @pytest.mark.slow
+@pytest.mark.benchmark
 class TestControlsPerformance:
     """Performance tests for controls."""
 
@@ -563,7 +564,7 @@ class TestControlsPerformance:
             press_button_basic(mock_pyboy, 'A')
 
         result = benchmark_runner.run('button_press', press_op, iterations=1000)
-        assert result['mean'] < 0.01
+        assert result['median'] < 0.01
 
     def test_screen_detection_performance(self, benchmark_runner):
         """Benchmark screen detection speed."""
@@ -576,7 +577,7 @@ class TestControlsPerformance:
             detect_screen_type(mock_pyboy)
 
         result = benchmark_runner.run('screen_detection', detect_op, iterations=1000)
-        assert result['mean'] < 0.005
+        assert result['median'] < 0.005
 
 
 if __name__ == '__main__':

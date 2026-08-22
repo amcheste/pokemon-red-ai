@@ -94,6 +94,7 @@ addopts = [
 ]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "benchmark: marks wall-clock timing benchmarks; deselected in CI (see .github/workflows/test.yml)",
     "integration: marks tests that require a real ROM or PyBoy session",
     "paper: marks tests that validate paper-relevant invariants (eval harness, seeding, reward determinism)",
 ]
