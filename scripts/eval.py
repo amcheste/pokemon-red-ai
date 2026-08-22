@@ -209,7 +209,13 @@ def run_episode(
         total_reward += reward
         steps += 1
 
-        # Track map visits
+        # Track map visits.
+        # NOTE: map 0 is PALLET_TOWN in the pret/pokered numbering, so this
+        # filter (written when 0 was believed to mean "not in game") also
+        # drops Pallet Town from unique_maps_visited — an agent that walks
+        # Oak's Lab -> Pallet Town -> Route 1 reports 2 maps, not 3.  Kept
+        # unchanged so the metric stays comparable with the 2026-07 baseline
+        # grid; same open question as the reward/observation filters.
         current_map = info.get("current_map", 0)
         if current_map != 0:
             maps_seen.add(current_map)
