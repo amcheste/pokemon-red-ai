@@ -534,6 +534,7 @@ class TestEvaluateRewardStrategy:
         assert len(results['component_totals']) > 0
 
 
+@pytest.mark.benchmark
 class TestRewardCalculatorPerformance:
     """Test reward calculator performance."""
 
@@ -551,7 +552,7 @@ class TestRewardCalculatorPerformance:
             calc.calculate_reward(state)
 
         result = benchmark_runner.run('standard_reward', calc_op, iterations=1000)
-        assert result['mean'] < 0.001  # Should be under 1ms
+        assert result['median'] < 0.001  # Should be under 1ms
 
 
 class TestRewardCalculatorEdgeCases:

@@ -595,6 +595,7 @@ class TestComprehensiveState:
         assert state['is_alive'] is False  # HP = 0
 
 
+@pytest.mark.benchmark
 class TestMemoryPerformance:
     """Test memory reading performance."""
 
@@ -607,7 +608,7 @@ class TestMemoryPerformance:
             read_memory_value(mock_memory, 0xD000)
 
         result = benchmark_runner.run('read_memory_8bit', read_op, iterations=1000)
-        assert result['mean'] < 0.001  # Should be under 1ms
+        assert result['median'] < 0.001  # Should be under 1ms
 
     def test_comprehensive_state_performance(self, benchmark_runner, mock_memory_from_state):
         """Benchmark comprehensive state retrieval."""
@@ -617,7 +618,7 @@ class TestMemoryPerformance:
             get_comprehensive_state(mock_memory)
 
         result = benchmark_runner.run('comprehensive_state', get_state, iterations=100)
-        assert result['mean'] < 0.01  # Should be under 10ms
+        assert result['median'] < 0.01  # Should be under 10ms
 
 
 class TestErrorResilience:

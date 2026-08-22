@@ -18,7 +18,14 @@ from pokemon_red_ai.game.memory import MEMORY_ADDRESSES
 
 
 class BenchmarkRunner:
-    """Simple benchmark runner for performance tests."""
+    """Simple benchmark runner for performance tests.
+
+    Reports both ``mean`` and ``median``.  Prefer ``median`` in assertions:
+    these benchmarks run on shared CI hardware where a single scheduler
+    hiccup produces a 40-60ms outlier, and one such outlier in 100
+    iterations shifts the mean by half a millisecond.  The median ignores
+    them, so it measures the code rather than the neighbours.
+    """
 
     def run(self, name: str, func: Callable, iterations: int = 100) -> Dict[str, Any]:
         """
@@ -47,6 +54,7 @@ class BenchmarkRunner:
             'iterations': iterations,
             'times': times,
             'mean': np.mean(times),
+            'median': np.median(times),
             'std': np.std(times),
             'min': np.min(times),
             'max': np.max(times),
