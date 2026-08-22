@@ -98,6 +98,10 @@ class StandardRewardCalculator(BaseRewardCalculator):
             self.reward_components['exploration'] = exploration_reward
 
         # New map discovery
+        # NOTE: map 0 is PALLET_TOWN in the pret/pokered numbering, so this
+        # guard (written when 0 was believed to mean "not in game") also
+        # skips Pallet Town's new-map bonus.  Kept unchanged so reward
+        # traces stay comparable with the 2026-07 baseline grid.
         if (position['map'] not in self.visited_maps and
                 position['map'] != 0):
             self.visited_maps.add(position['map'])
@@ -224,6 +228,10 @@ class ExplorationFocusedCalculator(BaseRewardCalculator):
             self.steps_since_exploration += 1
 
         # Massive bonus for new maps with progressive scaling
+        # NOTE: map 0 is PALLET_TOWN in the pret/pokered numbering, so this
+        # guard (written when 0 was believed to mean "not in game") also
+        # skips Pallet Town's new-map bonus.  Kept unchanged so reward
+        # traces stay comparable with the 2026-07 baseline grid.
         if (position['map'] not in self.visited_maps and
                 position['map'] != 0):
             self.visited_maps.add(position['map'])

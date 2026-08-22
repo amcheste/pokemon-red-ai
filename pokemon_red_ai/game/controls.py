@@ -166,14 +166,17 @@ def detect_screen_type(pyboy) -> ScreenType:
             _ = pyboy.memory[MEMORY_ADDRESSES['map_id']]
 
             map_id = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['map_id'])
+            player_name = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['player_name'])
             game_state = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['game_state'])
             menu_state = read_memory_value(pyboy.memory, MEMORY_ADDRESSES['menu_state'])
         except Exception as e:
             logger.error(f"Memory reading failed in screen detection: {e}")
             return ScreenType.UNKNOWN
 
-        # If map_id != 0, we're in the actual game world
-        if map_id != 0:
+        # In the game world: a nonzero map ID is sufficient, but map 0 is
+        # PALLET_TOWN (not "no map"), so also treat a set player name as
+        # in-game — wPlayerName stays 0x00 until a game is started/loaded.
+        if map_id != 0 or player_name != 0:
             return ScreenType.IN_GAME
 
         # Check menu_state first for main menu

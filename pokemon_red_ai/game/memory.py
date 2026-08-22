@@ -15,7 +15,12 @@ MEMORY_ADDRESSES = {
     # Player position and map
     'player_x': 0xD362,  # Player X coordinate (0-255)
     'player_y': 0xD361,  # Player Y coordinate (0-255)
-    'map_id': 0xD35E,  # Current map ID (0 = not in game, >0 = in game)
+    'map_id': 0xD35E,  # wCurMap — current map ID.  NOTE: 0 is PALLET_TOWN in
+                       # the pret/pokered numbering, so 0 does NOT mean
+                       # "not in game" (use is_in_game() for that).
+    'player_name': 0xD158,  # wPlayerName — 0x00 until a game has been
+                            # started/loaded (WRAM is zero-filled at boot),
+                            # then the first character of the player's name
 
     # Player stats (first party Pokemon; addresses from the pret/pokered
     # disassembly symbols).  Gen 1 stores multi-byte stat values BIG-endian
@@ -49,19 +54,27 @@ MEMORY_ADDRESSES = {
     'pc_items_count': 0xD53A,  # Number of items in PC
 }
 
-# Map ID constants for easier reference
+# Map ID constants from the pret/pokered disassembly
+# (constants/map_constants.asm).  Cities are 0-10, map 11 is unused,
+# routes are 12-36, indoor maps start at 37.  Verified against a live
+# PyBoy session: the post-intro save state visits maps
+# {0, 12, 37, 38, 39, 40} = Pallet Town, Route 1, Red's house 1F/2F,
+# Blue's house, Oak's lab.
 MAP_IDS = {
-    'pallet_town': 1,
-    'viridian_city': 2,
-    'pewter_city': 3,
-    'cerulean_city': 4,
-    'lavender_town': 5,
-    'vermilion_city': 6,
-    'celadon_city': 7,
-    'fuchsia_city': 8,
-    'cinnabar_island': 9,
-    'indigo_plateau': 10,
-    'saffron_city': 11,
+    # Towns and cities ($00-$0A)
+    'pallet_town': 0,
+    'viridian_city': 1,
+    'pewter_city': 2,
+    'cerulean_city': 3,
+    'lavender_town': 4,
+    'vermilion_city': 5,
+    'celadon_city': 6,
+    'fuchsia_city': 7,
+    'cinnabar_island': 8,
+    'indigo_plateau': 9,
+    'saffron_city': 10,
+    # ($0B is UNUSED_MAP_0B)
+    # Routes ($0C-$24)
     'route_1': 12,
     'route_2': 13,
     'route_3': 14,
@@ -87,6 +100,39 @@ MAP_IDS = {
     'route_23': 34,
     'route_24': 35,
     'route_25': 36,
+    # Early-game indoor maps ($25-$44)
+    'reds_house_1f': 37,
+    'reds_house_2f': 38,
+    'blues_house': 39,
+    'oaks_lab': 40,
+    'viridian_pokecenter': 41,
+    'viridian_mart': 42,
+    'viridian_school_house': 43,
+    'viridian_nickname_house': 44,
+    'viridian_gym': 45,
+    'digletts_cave_route_2': 46,
+    'viridian_forest_north_gate': 47,
+    'route_2_trade_house': 48,
+    'route_2_gate': 49,
+    'viridian_forest_south_gate': 50,
+    'viridian_forest': 51,
+    'museum_1f': 52,
+    'museum_2f': 53,
+    'pewter_gym': 54,
+    'pewter_nidoran_house': 55,
+    'pewter_mart': 56,
+    'pewter_speech_house': 57,
+    'pewter_pokecenter': 58,
+    'mt_moon_1f': 59,
+    'mt_moon_b1f': 60,
+    'mt_moon_b2f': 61,
+    'cerulean_trashed_house': 62,
+    'cerulean_trade_house': 63,
+    'cerulean_pokecenter': 64,
+    'cerulean_gym': 65,
+    'bike_shop': 66,
+    'cerulean_mart': 67,
+    'mt_moon_pokecenter': 68,
 }
 
 # Badge bit flags
@@ -367,16 +413,25 @@ def get_map_name(map_id: int) -> str:
 
 def is_in_game(memory) -> bool:
     """
-    Check if player is currently in the game world (not in menus/intro).
+    Check if a game is running (past the title/intro screens).
+
+    Uses wPlayerName rather than wCurMap: the intro leaves wCurMap at 0,
+    but 0 is also PALLET_TOWN's real map ID, so a map-ID check reports
+    "not in game" whenever the player stands in Pallet Town.  wPlayerName
+    is 0x00 from boot (the game zero-fills WRAM) until a game is started
+    or loaded, after which its first byte is a nonzero Gen 1 text code.
+
+    Note: with a saved game present, the Continue menu also loads the
+    player name, so this reports True from the main menu.  RL runs use a
+    fresh ROM or a post-intro save state, where that case never occurs.
 
     Args:
         memory: PyBoy memory object
 
     Returns:
-        True if player is in the game world
+        True if a game has been started (player has control of the world)
     """
-    map_id = read_memory_value(memory, MEMORY_ADDRESSES['map_id'])
-    return map_id != 0
+    return read_memory_value(memory, MEMORY_ADDRESSES['player_name']) != 0
 
 
 def get_comprehensive_state(memory) -> Dict[str, Union[int, float, str, Dict]]:

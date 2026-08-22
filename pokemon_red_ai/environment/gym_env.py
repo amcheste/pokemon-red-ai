@@ -288,7 +288,10 @@ class PokemonRedGymEnv(gym.Env):
         reward_breakdown = self.reward_calculator.get_reward_breakdown()
         exploration_progress = self.game.get_exploration_progress()
 
-        # Count unique maps from visited locations
+        # Count unique maps from visited locations.
+        # NOTE: map 0 is PALLET_TOWN (pret/pokered numbering); this filter
+        # predates that discovery and also drops Pallet Town from the count.
+        # Kept unchanged for baseline comparability.
         unique_maps = set()
         for x, y, map_id in self.visited_locations:
             if map_id != 0:

@@ -103,6 +103,7 @@ def mock_memory_from_state():
                 MEMORY_ADDRESSES['player_x']: 10,
                 MEMORY_ADDRESSES['player_y']: 10,
                 MEMORY_ADDRESSES['map_id']: 1,
+                MEMORY_ADDRESSES['player_name']: 0x91,  # 'R' in Gen 1 text
                 MEMORY_ADDRESSES['player_level']: 5,
                 # HP values are stored big-endian: high byte first
                 MEMORY_ADDRESSES['current_hp']: 0,

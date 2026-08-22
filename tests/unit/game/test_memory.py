@@ -33,7 +33,7 @@ class TestMemoryAddresses:
     def test_memory_addresses_exist(self):
         """Test that all required memory addresses are defined."""
         required_addresses = [
-            'player_x', 'player_y', 'map_id', 'player_level',
+            'player_x', 'player_y', 'map_id', 'player_name', 'player_level',
             'current_hp', 'max_hp',
             'badges', 'game_state', 'menu_state', 'party_count'
         ]
@@ -54,6 +54,11 @@ class TestMemoryAddresses:
         assert MEMORY_ADDRESSES['max_hp'] == 0xD18D
         assert MEMORY_ADDRESSES['player_level'] == 0xD18C
 
+    def test_map_and_name_addresses_match_pret_pokered(self):
+        """wCurMap is 0xD35E and wPlayerName is 0xD158 per pret/pokered."""
+        assert MEMORY_ADDRESSES['map_id'] == 0xD35E
+        assert MEMORY_ADDRESSES['player_name'] == 0xD158
+
     def test_map_ids_exist(self):
         """Test that map ID constants are defined."""
         expected_maps = ['pallet_town', 'viridian_city', 'pewter_city', 'cerulean_city']
@@ -61,6 +66,64 @@ class TestMemoryAddresses:
         for map_name in expected_maps:
             assert map_name in MAP_IDS
             assert isinstance(MAP_IDS[map_name], int)
+
+    def test_map_ids_match_pret_pokered(self):
+        """MAP_IDS must match constants/map_constants.asm in pret/pokered.
+
+        Cities are $00-$0A (Pallet Town is genuinely 0, NOT 1 — the old
+        table had every city off by one), $0B is unused, routes are
+        $0C-$24, and indoor maps start at $25.
+        """
+        assert MAP_IDS['pallet_town'] == 0
+        assert MAP_IDS['viridian_city'] == 1
+        assert MAP_IDS['pewter_city'] == 2
+        assert MAP_IDS['cerulean_city'] == 3
+        assert MAP_IDS['lavender_town'] == 4
+        assert MAP_IDS['vermilion_city'] == 5
+        assert MAP_IDS['celadon_city'] == 6
+        assert MAP_IDS['fuchsia_city'] == 7
+        assert MAP_IDS['cinnabar_island'] == 8
+        assert MAP_IDS['indigo_plateau'] == 9
+        assert MAP_IDS['saffron_city'] == 10
+
+        # Routes: ROUTE_n = $0C + (n - 1)
+        for n in range(1, 26):
+            assert MAP_IDS[f'route_{n}'] == 11 + n
+
+        # Early-game indoor maps
+        assert MAP_IDS['reds_house_1f'] == 37
+        assert MAP_IDS['reds_house_2f'] == 38
+        assert MAP_IDS['blues_house'] == 39
+        assert MAP_IDS['oaks_lab'] == 40
+        assert MAP_IDS['viridian_pokecenter'] == 41
+        assert MAP_IDS['viridian_gym'] == 45
+        assert MAP_IDS['viridian_forest'] == 51
+        assert MAP_IDS['pewter_gym'] == 54
+        assert MAP_IDS['mt_moon_1f'] == 59
+        assert MAP_IDS['cerulean_gym'] == 65
+        assert MAP_IDS['mt_moon_pokecenter'] == 68
+
+    def test_map_ids_are_unique(self):
+        """No two map names may share an ID (get_map_name relies on this)."""
+        values = list(MAP_IDS.values())
+        assert len(values) == len(set(values))
+
+    def test_live_baseline_maps_resolve(self):
+        """Maps observed live in the 2026-07-23 baseline grid must resolve.
+
+        The post-intro save state yields visited map IDs
+        {0, 12, 37, 38, 39, 40} in a real PyBoy session.
+        """
+        expected = {
+            0: 'pallet_town',
+            12: 'route_1',
+            37: 'reds_house_1f',
+            38: 'reds_house_2f',
+            39: 'blues_house',
+            40: 'oaks_lab',
+        }
+        for map_id, name in expected.items():
+            assert get_map_name(map_id) == name
 
     def test_badge_flags_exist(self):
         """Test that badge flag constants are defined."""
@@ -357,22 +420,44 @@ class TestGameState:
         assert state['map_id'] == 5
 
     def test_is_in_game_true(self):
-        """Test is_in_game when player is in game world."""
+        """is_in_game is True once the player name is set."""
         mock_memory = Mock()
-        mock_memory.__getitem__ = Mock(return_value=3)  # Non-zero map_id
 
-        result = is_in_game(mock_memory)
+        def memory_side_effect(addr):
+            memory_map = {
+                MEMORY_ADDRESSES['player_name']: 0x91,  # 'R' in Gen 1 text
+                MEMORY_ADDRESSES['map_id']: 3,
+            }
+            return memory_map.get(addr, 0)
 
-        assert result is True
+        mock_memory.__getitem__ = Mock(side_effect=memory_side_effect)
+
+        assert is_in_game(mock_memory) is True
+
+    def test_is_in_game_true_in_pallet_town(self):
+        """Pallet Town's real map ID is 0 — must still count as in-game.
+
+        This is exactly the case the old map_id != 0 check got wrong.
+        """
+        mock_memory = Mock()
+
+        def memory_side_effect(addr):
+            memory_map = {
+                MEMORY_ADDRESSES['player_name']: 0x91,  # 'R' in Gen 1 text
+                MEMORY_ADDRESSES['map_id']: 0,          # PALLET_TOWN
+            }
+            return memory_map.get(addr, 0)
+
+        mock_memory.__getitem__ = Mock(side_effect=memory_side_effect)
+
+        assert is_in_game(mock_memory) is True
 
     def test_is_in_game_false(self):
-        """Test is_in_game when player is not in game world."""
+        """is_in_game is False during the intro (WRAM zero-filled)."""
         mock_memory = Mock()
-        mock_memory.__getitem__ = Mock(return_value=0)  # Zero map_id
+        mock_memory.__getitem__ = Mock(return_value=0)
 
-        result = is_in_game(mock_memory)
-
-        assert result is False
+        assert is_in_game(mock_memory) is False
 
 
 class TestMoneyReading:
@@ -522,10 +607,10 @@ class TestMapUtilities:
         map_name = get_map_name(999)
         assert map_name == 'unknown_map_999'
 
-    def test_get_map_name_zero(self):
-        """Test getting name for map ID 0."""
+    def test_get_map_name_zero_is_pallet_town(self):
+        """Map ID 0 is Pallet Town in the pret/pokered numbering."""
         map_name = get_map_name(0)
-        assert map_name == 'unknown_map_0'
+        assert map_name == 'pallet_town'
 
 
 class TestComprehensiveState:
@@ -559,8 +644,9 @@ class TestComprehensiveState:
 
         # Verify derived values
         assert state['badge_count'] == 0  # No badges set
-        assert state['in_game'] is True   # Map ID != 0
+        assert state['in_game'] is True   # Player name is set
         assert state['is_alive'] is True  # HP > 0
+        assert state['map_name'] == 'viridian_city'  # Map 1 per pret/pokered
 
     def test_get_comprehensive_state_dead_pokemon(self):
         """Test comprehensive state when Pokemon is unconscious."""
