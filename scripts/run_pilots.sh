@@ -33,7 +33,11 @@ ALERTS_CONFIG="configs/alerts.yaml"
 WANDB_PROJECT="pokemon-red-ai"
 PARALLEL=1
 N_ENVS=4
-DEVICE="mps"
+# cpu, NOT mps: torch 2.8's Metal backend crashes RecurrentPPO runs with a
+# deterministic MPSNDArray sliceDimension assertion (SIGABRT) — took down
+# the 2026-07-23 grid twice (AMC-255).  CPU also benchmarks slightly
+# faster for these small nets on M3 Max (pixel: 178 vs 162 fps).
+DEVICE="cpu"
 DRY_RUN=0
 NO_CAFFEINATE=0
 SKIP_COMPLETED=1
@@ -58,8 +62,9 @@ Optional:
                             Default: 4.  Each env uses one CPU core.
   --device {auto,cpu,cuda,mps}
                             PyTorch device for the policy network.
-                            Default: mps (Apple Silicon GPU).  Set to
-                            'auto' on non-Apple-Silicon hardware.
+                            Default: cpu.  Do NOT use mps with
+                            RecurrentPPO on torch 2.8 — deterministic
+                            Metal assertion crash (AMC-255).
   --reward-strategy NAME    Reward strategy passed to every train.py
                             invocation (events, pleines, standard, ...).
                             Default: events.  The Paper A baseline grid
