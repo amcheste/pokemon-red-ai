@@ -5,6 +5,8 @@ Tests argument parsing, seeding, and config assembly without actually
 running a training loop (no ROM or PyBoy needed).
 """
 
+import logging
+
 import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
@@ -15,6 +17,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 # collection we import directly.
 from scripts.train import (
     _make_env_factory,
+    _warn_unsafe_device,
     _make_vec_env,
     build_parser,
     collect_provenance,
@@ -124,6 +127,37 @@ class TestArgumentParser:
             "--wandb-entity", "my-team",
         ])
         assert args.wandb_entity == "my-team"
+
+
+class TestUnsafeDeviceWarning:
+    """mps + RecurrentPPO aborts on torch 2.8 -- warn, don't block (AMC-255)."""
+
+    def test_mps_with_recurrent_ppo_warns(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="scripts.train"):
+            assert _warn_unsafe_device("mps", "RecurrentPPO") is True
+        assert "AMC-255" in caplog.text
+        assert "--device cpu" in caplog.text
+
+    @pytest.mark.parametrize("device,algorithm", [
+        ("cpu", "RecurrentPPO"),   # the fixed default
+        ("cuda", "RecurrentPPO"),
+        ("auto", "RecurrentPPO"),
+        (None, "RecurrentPPO"),    # --device unset
+        ("mps", "PPO"),            # no LSTM slicing, so no assertion
+    ])
+    def test_safe_combinations_do_not_warn(self, device, algorithm, caplog):
+        with caplog.at_level(logging.WARNING, logger="scripts.train"):
+            assert _warn_unsafe_device(device, algorithm) is False
+        assert caplog.text == ""
+
+    def test_device_help_documents_the_hazard(self):
+        """The old help text actively recommended mps -- keep it gone."""
+        parser = build_parser()
+        device_help = next(
+            a.help for a in parser._actions if a.dest == "device"
+        )
+        assert "AMC-255" in device_help
+        assert "Do NOT pass 'mps'" in device_help
 
 
 class TestGlobalSeeds:

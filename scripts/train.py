@@ -242,9 +242,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--device", type=str, default=None,
         choices=["auto", "cpu", "cuda", "mps"],
         help="PyTorch device for the policy network.  Default: SB3's 'auto' "
-             "(picks cuda if available, else cpu; does NOT pick mps).  Pass "
-             "'mps' explicitly on Apple Silicon to accelerate gradient "
-             "updates on the integrated GPU.",
+             "(picks cuda if available, else cpu; does NOT pick mps).  Do "
+             "NOT pass 'mps' with RecurrentPPO on torch 2.8 — the Metal "
+             "backend hits a deterministic MPSNDArray assertion in the LSTM "
+             "sequence slicing and aborts the run (AMC-255).  CPU is also "
+             "slightly faster for these small nets on M3 Max.",
     )
 
     # ── Reproducibility ──────────────────────────────────────────────
@@ -333,6 +335,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     return p
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Device safety
+# ──────────────────────────────────────────────────────────────────────
+
+
+def _warn_unsafe_device(device: Optional[str], algorithm: str) -> bool:
+    """
+    Warn when the selected device is known to abort this algorithm.
+
+    torch 2.8's Metal backend kills RecurrentPPO mid-run with::
+
+        MPSNDArray.mm:124: failed assertion
+        `[MPSNDArrayDescriptor sliceDimension:withSubrange:]'
+
+    raised from the LSTM sequence slicing.  It is deterministic per seed
+    but only trips well past the 50k-step preflight smoketest (observed at
+    131k and 196k on the 2026-07-23 grid), so a doomed run looks healthy
+    for hours before it SIGABRTs.
+
+    Warns rather than blocks: ``--device mps`` stays selectable so the
+    combination can be re-tested on future torch versions (AMC-255).
+
+    Args:
+        device: The ``--device`` value, or None when unset.
+        algorithm: The ``--algorithm`` value.
+
+    Returns:
+        True if the combination is known-unsafe (a warning was emitted).
+    """
+    if device == "mps" and algorithm == "RecurrentPPO":
+        logger.warning(
+            "--device mps with RecurrentPPO is known to crash on torch 2.8 "
+            "(deterministic MPSNDArray assertion, AMC-255).  The failure "
+            "lands long after preflight passes.  Use --device cpu; it also "
+            "benchmarks slightly faster for these small nets on M3 Max."
+        )
+        return True
+    return False
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -491,6 +533,8 @@ def train(args: argparse.Namespace) -> None:
         model_overrides["seed"] = args.seed
     if args.device is not None:
         model_overrides["device"] = args.device
+
+    _warn_unsafe_device(args.device, args.algorithm)
 
     # RecurrentPPO-specific args
     if args.algorithm == "RecurrentPPO":
