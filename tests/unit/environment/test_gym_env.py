@@ -461,6 +461,25 @@ class TestGetScreenRgb:
         assert arr.shape == (144, 160, 3)
         assert arr.dtype == np.uint8
 
+    def test_strips_alpha_from_real_pyboy_rgba(self, mock_agent_class, mock_rom_file):
+        """Real PyBoy screens are RGBA — the capture path must return RGB.
+
+        ``pyboy.screen.image`` is a PIL image in mode RGBA, so
+        ``get_screen_array()`` returns (144, 160, 4) against a real ROM
+        (verified on pyboy 2.6.0).  The shared fixture mocks it as
+        3-channel, so a shape assertion alone would pass while
+        production handed W&B a 4-channel array.
+        """
+        env = PokemonRedGymEnv(str(mock_rom_file))
+        rgba = np.zeros((144, 160, 4), dtype=np.uint8)
+        rgba[..., 3] = 255  # opaque alpha, as PyBoy emits
+        env.game.get_screen_array = Mock(return_value=rgba)
+
+        arr = env.get_screen_rgb()
+
+        assert arr.shape == (144, 160, 3)
+        assert arr.dtype == np.uint8
+
     def test_returns_none_instead_of_raising(self, mock_agent_class, mock_rom_file):
         """Any failure must return None — an exception raised inside a
         SubprocVecEnv worker kills the worker (and the training run)."""

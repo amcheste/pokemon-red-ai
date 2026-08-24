@@ -13,6 +13,7 @@ import gymnasium as gym
 from ..game.agent import PokemonRedAgent
 from .observations import (
     create_observation_space,
+    normalize_screen,
     process_game_state,
     validate_observation,
     # Paper observation treatments
@@ -503,9 +504,15 @@ class PokemonRedGymEnv(gym.Env):
           kills it, taking the whole training run down.
         * **Never raises**: an exception inside ``env_method`` also
           kills the worker, so any failure returns None instead.
+
+        The raw PyBoy screen is RGBA — ``pyboy.screen.image`` is a PIL
+        image in mode ``RGBA``, so ``get_screen_array`` hands back
+        ``(144, 160, 4)``.  ``normalize_screen`` drops the alpha channel
+        so this actually returns the RGB it advertises, matching what
+        every observation path already does with the same array.
         """
         try:
-            return self.game.get_screen_array()
+            return normalize_screen(self.game.get_screen_array())
         except Exception as e:
             logger.debug(f"get_screen_rgb failed: {e}")
             return None
