@@ -1181,19 +1181,23 @@ class MonitoringCallback(WandbCallback):
             logger.debug(f"W&B screen log failed: {exc}")
 
     def _get_env_screen(self) -> Optional[np.ndarray]:
-        """Fetch the first env's screen as (H, W, 3) uint8, or None."""
+        """Fetch the first env's screen as (H, W, 3) uint8, or None.
+
+        Uses the env's zero-arg ``get_screen_rgb`` — NEVER ``render``
+        with a mode argument: under SubprocVecEnv the call runs inside
+        the worker against the gymnasium ``Monitor`` wrapper, whose
+        ``render()`` takes no args, and the resulting TypeError kills
+        the worker and the whole run (AMC-254, 2026-07-23 grid outage).
+        """
         env = getattr(self, "training_env", None)
         if env is None:
             return None
 
         try:
-            screens = env.env_method("render", "rgb_array", indices=[0])
-        except Exception:
-            try:
-                screens = env.env_method("render", indices=[0])
-            except Exception as exc:
-                logger.debug(f"env_method('render') failed: {exc}")
-                return None
+            screens = env.env_method("get_screen_rgb", indices=[0])
+        except Exception as exc:
+            logger.debug(f"env_method('get_screen_rgb') failed: {exc}")
+            return None
 
         if not screens:
             return None

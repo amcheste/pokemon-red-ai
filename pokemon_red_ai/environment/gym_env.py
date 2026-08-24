@@ -13,6 +13,7 @@ import gymnasium as gym
 from ..game.agent import PokemonRedAgent
 from .observations import (
     create_observation_space,
+    normalize_screen,
     process_game_state,
     validate_observation,
     # Paper observation treatments
@@ -490,6 +491,34 @@ class PokemonRedGymEnv(gym.Env):
                     f"Success rate: {self.successful_resets}/{self.total_episodes}")
 
         return observation, info
+
+    def get_screen_rgb(self) -> Optional[np.ndarray]:
+        """Return the current game screen as an (H, W, 3) uint8 array.
+
+        Screen-capture entry point for monitoring callbacks.  Two hard
+        requirements, both learned from the 2026-07-23 grid outage
+        (AMC-254):
+
+        * **Zero-arg**, so it can be invoked via ``VecEnv.env_method``
+          through wrapper ``__getattr__`` forwarding.  Calling
+          ``render("rgb_array")`` that way hits gymnasium's
+          ``Wrapper.render()``, which takes no positional args — the
+          TypeError is raised *inside* the SubprocVecEnv worker and
+          kills it, taking the whole training run down.
+        * **Never raises**: an exception inside ``env_method`` also
+          kills the worker, so any failure returns None instead.
+
+        The raw PyBoy screen is RGBA — ``pyboy.screen.image`` is a PIL
+        image in mode ``RGBA``, so ``get_screen_array`` hands back
+        ``(144, 160, 4)``.  ``normalize_screen`` drops the alpha channel
+        so this actually returns the RGB it advertises, matching what
+        every observation path already does with the same array.
+        """
+        try:
+            return normalize_screen(self.game.get_screen_array())
+        except Exception as e:
+            logger.debug(f"get_screen_rgb failed: {e}")
+            return None
 
     def render(self, mode: str = 'human') -> Optional[np.ndarray]:
         """Render the environment."""

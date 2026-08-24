@@ -442,6 +442,75 @@ class TestPokemonRedGymEnvInfo:
         )
 
 
+class TestGetScreenRgb:
+    """Safe screen-capture entry point (AMC-254 regression).
+
+    The 2026-07-23 grid outage: MonitoringCallback captured screens via
+    env_method("render", "rgb_array"), which resolves to gymnasium's
+    zero-arg Wrapper.render() inside the SubprocVecEnv worker — the
+    TypeError killed the worker and the run.  get_screen_rgb is the
+    zero-arg, never-raising replacement.
+    """
+
+    def test_returns_screen_array(self, mock_agent_class, mock_rom_file):
+        env = PokemonRedGymEnv(str(mock_rom_file))
+
+        arr = env.get_screen_rgb()
+
+        assert isinstance(arr, np.ndarray)
+        assert arr.shape == (144, 160, 3)
+        assert arr.dtype == np.uint8
+
+    def test_strips_alpha_from_real_pyboy_rgba(self, mock_agent_class, mock_rom_file):
+        """Real PyBoy screens are RGBA — the capture path must return RGB.
+
+        ``pyboy.screen.image`` is a PIL image in mode RGBA, so
+        ``get_screen_array()`` returns (144, 160, 4) against a real ROM
+        (verified on pyboy 2.6.0).  The shared fixture mocks it as
+        3-channel, so a shape assertion alone would pass while
+        production handed W&B a 4-channel array.
+        """
+        env = PokemonRedGymEnv(str(mock_rom_file))
+        rgba = np.zeros((144, 160, 4), dtype=np.uint8)
+        rgba[..., 3] = 255  # opaque alpha, as PyBoy emits
+        env.game.get_screen_array = Mock(return_value=rgba)
+
+        arr = env.get_screen_rgb()
+
+        assert arr.shape == (144, 160, 3)
+        assert arr.dtype == np.uint8
+
+    def test_returns_none_instead_of_raising(self, mock_agent_class, mock_rom_file):
+        """Any failure must return None — an exception raised inside a
+        SubprocVecEnv worker kills the worker (and the training run)."""
+        env = PokemonRedGymEnv(str(mock_rom_file))
+        env.game.get_screen_array = Mock(side_effect=RuntimeError("PyBoy died"))
+
+        assert env.get_screen_rgb() is None
+
+    def test_reachable_through_monitor_wrapper(self, mock_agent_class, mock_rom_file):
+        """Reproduce the exact SubprocVecEnv worker call path.
+
+        The SB3 worker executes ``env.get_wrapper_attr(name)(*args)``
+        against the Monitor-wrapped env.  get_screen_rgb is not defined
+        on any wrapper, so get_wrapper_attr walks down to the base env
+        and the call succeeds; "render" resolves to gymnasium's zero-arg
+        ``Wrapper.render`` first, so the old ``render("rgb_array")``
+        call raised TypeError inside the worker and killed the run.
+        """
+        from stable_baselines3.common.monitor import Monitor
+
+        env = PokemonRedGymEnv(str(mock_rom_file))
+        wrapped = Monitor(env)
+
+        arr = wrapped.get_wrapper_attr("get_screen_rgb")()
+        assert isinstance(arr, np.ndarray)
+        assert arr.shape == (144, 160, 3)
+
+        with pytest.raises(TypeError):
+            wrapped.get_wrapper_attr("render")("rgb_array")
+
+
 class TestPokemonRedGymEnvContextManager:
     """Test environment as context manager."""
 
